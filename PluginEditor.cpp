@@ -72,7 +72,12 @@ void WaveformDisplay::paint(juce::Graphics& g)
                     float px = (static_cast<float>(voice->freezeCurrentPosition) / static_cast<float>(numSamples)) * static_cast<float>(width);
                     g.setColour(juce::Colours::cyan.withAlpha(voice->currentVelocity * 0.8f + 0.2f));
                     g.drawLine(px, 0.0f, px, static_cast<float>(height), 1.5f);
-                    g.fillEllipse(px - 3.0f, static_cast<float>(centerY) - 3.0f, 6.0f, 6.0f);
+                    g.fillEllipse(px - 4.0f, static_cast<float>(centerY) - 4.0f, 8.0f, 8.0f);
+                    
+                    // Draw note name above playhead
+                    g.setFont(12.0f);
+                    g.drawText(juce::MidiMessage::getMidiNoteName(voice->getCurrentlyPlayingNote(), true, true, 3), 
+                               static_cast<int>(px - 20), 15, 40, 15, juce::Justification::centred);
                 }
             }
         }
@@ -82,7 +87,7 @@ void WaveformDisplay::paint(juce::Graphics& g)
         float playheadX = processor.getPlayheadPosition() * static_cast<float>(width);
         g.setColour(processor.isPlaying() ? juce::Colours::green : juce::Colours::yellow);
         g.drawLine(playheadX, 0.0f, playheadX, static_cast<float>(height), 2.0f);
-        g.fillEllipse(playheadX - 4.0f, static_cast<float>(centerY) - 4.0f, 8.0f, 8.0f);
+        g.fillEllipse(playheadX - 5.0f, static_cast<float>(centerY) - 5.0f, 10.0f, 10.0f);
     }
 }
 
@@ -163,11 +168,24 @@ GrainfreezeAudioProcessorEditor::GrainfreezeAudioProcessorEditor(GrainfreezeAudi
 
     addAndMakeVisible(loadButton); loadButton.setButtonText("Load Audio"); loadButton.onClick = [this] { loadAudioFile(); };
     addAndMakeVisible(playButton); playButton.setButtonText("Play / Stop"); playButton.onClick = [this] { audioProcessor.setPlaying(!audioProcessor.isPlaying()); };
+    
     addAndMakeVisible(freezeButton); freezeButton.setButtonText("Freeze"); freezeButton.setClickingTogglesState(true);
+    freezeButton.onClick = [this] {
+        if (freezeButton.getToggleState()) {
+            audioProcessor.midiModeParam->setValueNotifyingHost(0.0f);
+        }
+    };
     freezeModeAttachment = std::make_unique<ButtonAttachment>(audioProcessor.apvts, "freezeMode", freezeButton);
+    
     addAndMakeVisible(syncToDawButton); syncToDawButton.setButtonText("Sync DAW");
     syncToDawAttachment = std::make_unique<ButtonAttachment>(audioProcessor.apvts, "syncToDaw", syncToDawButton);
+    
     addAndMakeVisible(midiModeButton); midiModeButton.setButtonText("MIDI Mode"); midiModeButton.setClickingTogglesState(true);
+    midiModeButton.onClick = [this] {
+        if (midiModeButton.getToggleState()) {
+            audioProcessor.freezeModeParam->setValueNotifyingHost(0.0f);
+        }
+    };
     midiModeAttachment = std::make_unique<ButtonAttachment>(audioProcessor.apvts, "midiMode", midiModeButton);
 
     addAndMakeVisible(statusLabel); statusLabel.setText("No audio", juce::dontSendNotification); statusLabel.setJustificationType(juce::Justification::centredLeft);
@@ -249,10 +267,7 @@ void GrainfreezeAudioProcessorEditor::resized()
     auto r10 = rc.removeFromTop(30); midiPosMinLabel.setBounds(r10.removeFromLeft(80)); midiPosMinSlider.setBounds(r10); rc.removeFromTop(2);
     auto r11 = rc.removeFromTop(30); midiPosCenterLabel.setBounds(r11.removeFromLeft(80)); midiPosCenterSlider.setBounds(r11); rc.removeFromTop(2);
     auto r12 = rc.removeFromTop(30); midiPosMaxLabel.setBounds(r12.removeFromLeft(80)); midiPosMaxSlider.setBounds(r12);
-    auto sa = b.removeFromBottom(40);
-    recommendedLabel.setBounds(sa.removeFromRight(350));
-    statusLabel.setBounds(sa);
-
+    auto sa = b.removeFromBottom(40); recommendedLabel.setBounds(sa.removeFromRight(350)); statusLabel.setBounds(sa);
     spectrumVisualizer.setBounds(b.removeFromBottom(120).reduced(10, 5));
     waveformDisplay.setBounds(b.reduced(10, 10));
 }
@@ -262,12 +277,15 @@ void GrainfreezeAudioProcessorEditor::timerCallback()
     waveformDisplay.repaint();
     const auto& m = audioProcessor.getSpectrumMagnitudes();
     if (!m.empty()) spectrumVisualizer.updateSpectrum(m, audioProcessor.getCurrentFftSize(), audioProcessor.getCurrentSampleRate());
+    
     bool isF = audioProcessor.freezeModeParam->get();
     freezeButton.setToggleState(isF, juce::dontSendNotification);
     freezeButton.setColour(juce::TextButton::buttonColourId, isF ? juce::Colours::orange : juce::Colours::grey);
+    
     bool isM = audioProcessor.midiModeParam->get();
     midiModeButton.setToggleState(isM, juce::dontSendNotification);
     midiModeButton.setColour(juce::TextButton::buttonColourId, isM ? juce::Colours::cyan : juce::Colours::grey);
+    
     if (audioProcessor.isAudioLoaded()) {
         juce::String s = "Loaded: " + audioProcessor.getLoadedFileName() + " | ";
         if (isM) s += "MIDI POLY"; else if (isF) s += "FREEZE"; else if (audioProcessor.isPlaying()) s += "PLAYING"; else s += "STOPPED";
