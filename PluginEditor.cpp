@@ -63,14 +63,17 @@ void WaveformDisplay::paint(juce::Graphics& g)
     
     if (isMidiMode)
     {
-        for (const auto& voice : processor.voices)
+        for (int i = 0; i < processor.synth.getNumVoices(); ++i)
         {
-            if (voice.isActive)
+            if (auto* voice = dynamic_cast<GrainfreezeVoice*>(processor.synth.getVoice(i)))
             {
-                float px = (static_cast<float>(voice.freezeCurrentPosition) / static_cast<float>(numSamples)) * static_cast<float>(width);
-                g.setColour(juce::Colours::cyan.withAlpha(voice.velocity * 0.8f + 0.2f));
-                g.drawLine(px, 0.0f, px, static_cast<float>(height), 1.5f);
-                g.fillEllipse(px - 3.0f, static_cast<float>(centerY) - 3.0f, 6.0f, 6.0f);
+                if (voice->isVoiceActive())
+                {
+                    float px = (static_cast<float>(voice->freezeCurrentPosition) / static_cast<float>(numSamples)) * static_cast<float>(width);
+                    g.setColour(juce::Colours::cyan.withAlpha(voice->currentVelocity * 0.8f + 0.2f));
+                    g.drawLine(px, 0.0f, px, static_cast<float>(height), 1.5f);
+                    g.fillEllipse(px - 3.0f, static_cast<float>(centerY) - 3.0f, 6.0f, 6.0f);
+                }
             }
         }
     }
