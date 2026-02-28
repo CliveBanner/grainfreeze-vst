@@ -93,6 +93,11 @@ private:
     juce::Label midiStartPosLabel;
     juce::Slider midiEndPosSlider;
     juce::Label midiEndPosLabel;
+    
+    juce::Slider attackSlider;
+    juce::Label attackLabel;
+    juce::Slider releaseSlider;
+    juce::Label releaseLabel;
 
     std::unique_ptr<juce::FileChooser> fileChooser;
 
@@ -110,6 +115,8 @@ private:
     std::unique_ptr<SliderAttachment> crossfadeLengthAttachment;
     std::unique_ptr<SliderAttachment> midiStartPosAttachment;
     std::unique_ptr<SliderAttachment> midiEndPosAttachment;
+    std::unique_ptr<SliderAttachment> attackAttachment;
+    std::unique_ptr<SliderAttachment> releaseAttachment;
     
     std::unique_ptr<ButtonAttachment> freezeModeAttachment;
     std::unique_ptr<ButtonAttachment> syncToDawAttachment;

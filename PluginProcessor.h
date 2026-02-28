@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include <vector>
 #include <complex>
+#include <map>
 
 //==============================================================================
 class GrainfreezeAudioProcessor;
@@ -39,21 +40,22 @@ public:
     float freezeMicroMovement = 0.0f;
     int freezeMicroCounter = 0;
 
-    // Pre-allocates all buffers to MAX size to avoid audio-thread allocations
-    void allocateMaxBuffers(int maxSize);
+    void allocateBuffers(int maxSize);
 
 private:
     GrainfreezeAudioProcessor& processor;
     void performPhaseVocoder();
 
-    // Per-voice DSP state - fixed size (Max FFT Size)
+    std::unique_ptr<juce::dsp::FFT> fftAnalysis;
+    std::unique_ptr<juce::dsp::FFT> fftSynthesis;
+    int currentVoiceFftSize = 0;
+
     std::vector<float> previousPhase;
     std::vector<float> synthesisPhase;
     std::vector<float> outputAccum;
     int outputWritePos = 0;
     int grainCounter = 0;
 
-    // Per-voice scratch buffers - fixed size (Max FFT Size)
     std::vector<float> analysisFrame;
     std::vector<float> fftBuffer;
     std::vector<float> magnitudeBuffer;
@@ -66,9 +68,6 @@ private:
 };
 
 //==============================================================================
-// Grainfreeze Audio Processor
-//==============================================================================
-
 class GrainfreezeAudioProcessor : public juce::AudioProcessor
 {
 public:
@@ -115,7 +114,6 @@ public:
     juce::AudioProcessorValueTreeState apvts;
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
-    // Parameters
     juce::AudioParameterFloat* timeStretch;
     juce::AudioParameterFloat* grainSizeParam;
     juce::AudioParameterFloat* hopSizeParam;
@@ -134,9 +132,11 @@ public:
     juce::AudioParameterBool* midiModeParam;
     juce::AudioParameterFloat* midiStartPosParam;
     juce::AudioParameterFloat* midiEndPosParam;
+    juce::AudioParameterFloat* attackParam;
+    juce::AudioParameterFloat* releaseParam;
 
     const std::vector<float>& getWindow() const { return window; }
-    std::vector<float>& getSpectrumMagnitudesRef() { return spectrumMagnitudes; }
+    void updateVoiceSpectrum(int bin, float magnitude);
 
     juce::Synthesiser synth;
     GrainfreezeVoice* getManualVoice();
@@ -173,7 +173,6 @@ private:
     std::vector<float> spectrumMagnitudes;
     std::vector<float> window;
 
-    // Fixed array of FFT objects for all 8 sizes
     static const int numFftSizes = 8;
     std::unique_ptr<juce::dsp::FFT> analysisFftObjects[numFftSizes];
     std::unique_ptr<juce::dsp::FFT> synthesisFftObjects[numFftSizes];

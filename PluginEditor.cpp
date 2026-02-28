@@ -208,12 +208,12 @@ GrainfreezeAudioProcessorEditor::GrainfreezeAudioProcessorEditor(GrainfreezeAudi
     midiModeButton.onClick = [this] { if (midiModeButton.getToggleState()) audioProcessor.freezeModeParam->setValueNotifyingHost(0.0f); };
     midiModeAttachment = std::make_unique<ButtonAttachment>(audioProcessor.apvts, "midiMode", midiModeButton);
     addAndMakeVisible(statusLabel); statusLabel.setText("No audio", juce::dontSendNotification); statusLabel.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(recommendedLabel); recommendedLabel.setText("MIDI Mapping: Full Linear 0-127", juce::dontSendNotification);
+    addAndMakeVisible(recommendedLabel); recommendedLabel.setText("MIDI Mapping: Linear 0-127", juce::dontSendNotification);
     recommendedLabel.setJustificationType(juce::Justification::centredRight); recommendedLabel.setFont(juce::FontOptions(11.0f).withStyle("Italic"));
     recommendedLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
     addAndMakeVisible(primaryControlsLabel); primaryControlsLabel.setText("Primary", juce::dontSendNotification); primaryControlsLabel.setFont(juce::FontOptions(14.0f).withStyle("Bold"));
     addAndMakeVisible(advancedControlsLabel); advancedControlsLabel.setText("Advanced", juce::dontSendNotification); advancedControlsLabel.setFont(juce::FontOptions(14.0f).withStyle("Bold"));
-    addAndMakeVisible(midiControlsLabel); midiControlsLabel.setText("MIDI Mapping", juce::dontSendNotification); midiControlsLabel.setFont(juce::FontOptions(14.0f).withStyle("Bold"));
+    addAndMakeVisible(midiControlsLabel); midiControlsLabel.setText("Performance", juce::dontSendNotification); midiControlsLabel.setFont(juce::FontOptions(14.0f).withStyle("Bold"));
     addAndMakeVisible(timeStretchSlider); timeStretchSlider.setSliderStyle(juce::Slider::LinearHorizontal); timeStretchSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 20);
     timeStretchAttachment = std::make_unique<SliderAttachment>(audioProcessor.apvts, "timeStretch", timeStretchSlider); addAndMakeVisible(timeStretchLabel); timeStretchLabel.setText("Stretch", juce::dontSendNotification);
     addAndMakeVisible(fftSizeSlider); fftSizeSlider.setSliderStyle(juce::Slider::LinearHorizontal); fftSizeSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 20);
@@ -244,6 +244,14 @@ GrainfreezeAudioProcessorEditor::GrainfreezeAudioProcessorEditor(GrainfreezeAudi
     addAndMakeVisible(midiEndPosSlider); midiEndPosSlider.setSliderStyle(juce::Slider::LinearHorizontal); midiEndPosSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 20);
     midiEndPosAttachment = std::make_unique<SliderAttachment>(audioProcessor.apvts, "midiEndPos", midiEndPosSlider);
     addAndMakeVisible(midiEndPosLabel); midiEndPosLabel.setText("End Pos", juce::dontSendNotification);
+    
+    addAndMakeVisible(attackSlider); attackSlider.setSliderStyle(juce::Slider::LinearHorizontal); attackSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 20);
+    attackSlider.setTextValueSuffix(" ms"); attackAttachment = std::make_unique<SliderAttachment>(audioProcessor.apvts, "attack", attackSlider);
+    addAndMakeVisible(attackLabel); attackLabel.setText("Attack", juce::dontSendNotification);
+    addAndMakeVisible(releaseSlider); releaseSlider.setSliderStyle(juce::Slider::LinearHorizontal); releaseSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 20);
+    releaseSlider.setTextValueSuffix(" ms"); releaseAttachment = std::make_unique<SliderAttachment>(audioProcessor.apvts, "release", releaseSlider);
+    addAndMakeVisible(releaseLabel); releaseLabel.setText("Release", juce::dontSendNotification);
+    
     startTimerHz(30);
 }
 
@@ -276,7 +284,9 @@ void GrainfreezeAudioProcessorEditor::resized()
     top.removeFromLeft(15);
     auto rc = top; midiControlsLabel.setBounds(rc.removeFromTop(20)); rc.removeFromTop(5);
     auto r10 = rc.removeFromTop(30); midiStartPosLabel.setBounds(r10.removeFromLeft(80)); midiStartPosSlider.setBounds(r10); rc.removeFromTop(2);
-    auto r11 = rc.removeFromTop(30); midiEndPosLabel.setBounds(r11.removeFromLeft(80)); midiEndPosSlider.setBounds(r11);
+    auto r11 = rc.removeFromTop(30); midiEndPosLabel.setBounds(r11.removeFromLeft(80)); midiEndPosSlider.setBounds(r11); rc.removeFromTop(2);
+    auto r12 = rc.removeFromTop(30); attackLabel.setBounds(r12.removeFromLeft(80)); attackSlider.setBounds(r12); rc.removeFromTop(2);
+    auto r13 = rc.removeFromTop(30); releaseLabel.setBounds(r13.removeFromLeft(80)); releaseSlider.setBounds(r13);
     auto sa = b.removeFromBottom(40); recommendedLabel.setBounds(sa.removeFromRight(350)); statusLabel.setBounds(sa);
     spectrumVisualizer.setBounds(b.removeFromBottom(120).reduced(10, 5));
     waveformDisplay.setBounds(b.reduced(10, 10));
