@@ -512,7 +512,7 @@ void GrainfreezeAudioProcessor::performPhaseVocoder()
         float deviation = phaseDiff - (bin * expectedPhaseAdvance);
 
         // Wrap deviation to [-π, π] range
-        deviation = juce::fmod(deviation + juce::MathConstants<float>::pi, juce::MathConstants<float>::twoPi);
+        deviation = std::fmod(deviation + juce::MathConstants<float>::pi, juce::MathConstants<float>::twoPi);
         if (deviation < 0) deviation += juce::MathConstants<float>::twoPi;
         deviation -= juce::MathConstants<float>::pi;
 
@@ -524,7 +524,6 @@ void GrainfreezeAudioProcessor::performPhaseVocoder()
     // --- Pitch Shifting Implementation ---
     float pitchShiftSemitones = pitchShiftParam->get();
     float pitchFactor = std::pow(2.0f, pitchShiftSemitones / 12.0f);
-    int numBins = currentFftSize / 2 + 1;
 
     // Clear synthesis buffer
     std::fill(fftBuffer.begin(), fftBuffer.end(), 0.0f);
@@ -565,7 +564,7 @@ void GrainfreezeAudioProcessor::performPhaseVocoder()
         synthesisPhase[bin] += phaseAdvance;
 
         // Wrap synthesis phase to [-π, π]
-        synthesisPhase[bin] = juce::fmod(synthesisPhase[bin] + juce::MathConstants<float>::pi, juce::MathConstants<float>::twoPi);
+        synthesisPhase[bin] = std::fmod(synthesisPhase[bin] + juce::MathConstants<float>::pi, juce::MathConstants<float>::twoPi);
         if (synthesisPhase[bin] < 0) synthesisPhase[bin] += juce::MathConstants<float>::twoPi;
         synthesisPhase[bin] -= juce::MathConstants<float>::pi;
 
