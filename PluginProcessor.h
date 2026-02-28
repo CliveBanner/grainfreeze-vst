@@ -142,6 +142,7 @@ public:
     juce::AudioParameterBool* syncToDawParam;    // Sync to DAW playback state
     juce::AudioParameterFloat* loopStartParam;   // Loop start position (0.0-1.0)
     juce::AudioParameterFloat* loopEndParam;     // Loop end position (0.0-1.0)
+    juce::AudioParameterFloat* pitchShiftParam;  // Pitch shift in semitones (-24 to +24)
 
     // Parameters - Advanced Controls
     juce::AudioParameterFloat* hfBoostParam;         // High-frequency boost 0-100%
@@ -198,6 +199,8 @@ private:
     // Phase Tracking for Phase Vocoder
     std::vector<float> previousPhase;     // Previous frame phases for unwrapping
     std::vector<float> synthesisPhase;    // Accumulated synthesis phases
+    std::vector<float> magnitudeBuffer;    // Magnitudes for pitch shifting
+    std::vector<float> phaseAdvanceBuffer; // Phase advances for pitch shifting
 
     // Spectrum Data for Visualization
     std::vector<float> spectrumMagnitudes; // Current FFT magnitudes

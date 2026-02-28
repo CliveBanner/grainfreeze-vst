@@ -123,6 +123,9 @@ private:
     juce::Slider glideSlider;        // Freeze mode glide time control
     juce::Label glideLabel;
 
+    juce::Slider pitchShiftSlider;   // Pitch shift in semitones
+    juce::Label pitchShiftLabel;
+
     // Advanced Controls (Right Column)
     juce::Slider hfBoostSlider;      // High-frequency boost control
     juce::Label hfBoostLabel;
@@ -150,6 +153,7 @@ private:
     std::unique_ptr<SliderAttachment> fftSizeAttachment;
     std::unique_ptr<SliderAttachment> hopSizeAttachment;
     std::unique_ptr<SliderAttachment> glideAttachment;
+    std::unique_ptr<SliderAttachment> pitchShiftAttachment;
     std::unique_ptr<SliderAttachment> hfBoostAttachment;
     std::unique_ptr<SliderAttachment> microMovementAttachment;
     std::unique_ptr<SliderAttachment> windowTypeAttachment;

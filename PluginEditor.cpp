@@ -336,8 +336,8 @@ GrainfreezeAudioProcessorEditor::GrainfreezeAudioProcessorEditor(GrainfreezeAudi
     waveformDisplay(p),
     spectrumVisualizer(p)
 {
-    // Set editor size (taller to accommodate spectrum)
-    setSize(900, 650);
+    // Set editor size (taller to accommodate spectrum and extra control)
+    setSize(900, 700);
 
     //==========================================================================
     // Control Buttons Setup
@@ -374,7 +374,7 @@ GrainfreezeAudioProcessorEditor::GrainfreezeAudioProcessorEditor(GrainfreezeAudi
     statusLabel.setJustificationType(juce::Justification::centredLeft);
 
     addAndMakeVisible(recommendedLabel);
-    recommendedLabel.setText("Grainfreeze by aquanode\nRecommended settings for freeze mode:\nStretch 1.5 | FFT 8192 | Hop 6.5 | Micro Move 100%",
+    recommendedLabel.setText("Grainfreeze by aquanode\nRecommended settings for freeze mode:\nStretch 1.5 | Pitch 0 | FFT 8192 | Hop 6.5 | Micro Move 100%",
         juce::dontSendNotification);
     recommendedLabel.setJustificationType(juce::Justification::centredRight);
     recommendedLabel.setFont(juce::Font(11.0f, juce::Font::italic));
@@ -438,6 +438,17 @@ GrainfreezeAudioProcessorEditor::GrainfreezeAudioProcessorEditor(GrainfreezeAudi
     addAndMakeVisible(glideLabel);
     glideLabel.setText("Freeze Glide", juce::dontSendNotification);
     glideLabel.setJustificationType(juce::Justification::centredLeft);
+
+    // Pitch Shift slider
+    addAndMakeVisible(pitchShiftSlider);
+    pitchShiftSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    pitchShiftSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 20);
+    pitchShiftSlider.setTextValueSuffix(" st");
+    pitchShiftAttachment = std::make_unique<SliderAttachment>(audioProcessor.apvts, "pitchShift", pitchShiftSlider);
+
+    addAndMakeVisible(pitchShiftLabel);
+    pitchShiftLabel.setText("Pitch Shift", juce::dontSendNotification);
+    pitchShiftLabel.setJustificationType(juce::Justification::centredLeft);
 
     //==========================================================================
     // ADVANCED CONTROLS Setup (Right Column)
@@ -520,7 +531,7 @@ void GrainfreezeAudioProcessorEditor::resized()
     // Top Control Bar Layout
     //==========================================================================
 
-    auto topBar = bounds.removeFromTop(170);
+    auto topBar = bounds.removeFromTop(210);
     topBar.reduce(10, 10);
 
     // Buttons area (left side)
@@ -574,6 +585,13 @@ void GrainfreezeAudioProcessorEditor::resized()
     glideLabel.setBounds(glideRow.removeFromLeft(90));
     glideRow.removeFromLeft(5);
     glideSlider.setBounds(glideRow);
+    leftColumn.removeFromTop(2);
+
+    // Pitch row
+    auto pitchRow = leftColumn.removeFromTop(30);
+    pitchShiftLabel.setBounds(pitchRow.removeFromLeft(90));
+    pitchRow.removeFromLeft(5);
+    pitchShiftSlider.setBounds(pitchRow);
 
     // Gap between columns
     paramsArea.removeFromLeft(15);

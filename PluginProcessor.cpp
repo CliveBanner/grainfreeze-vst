@@ -73,6 +73,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout GrainfreezeAudioProcessor::c
         juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f),
         1.0f));
 
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("pitchShift", 1), "Pitch Shift",
+        juce::NormalisableRange<float>(-24.0f, 24.0f, 0.1f),
+        0.0f));
+
     // High-frequency boost to compensate for phase vocoder roll-off (0-100%)
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("hfBoost", 1), "HF Boost",
@@ -124,6 +129,7 @@ GrainfreezeAudioProcessor::GrainfreezeAudioProcessor()
     syncToDawParam = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter("syncToDaw"));
     loopStartParam = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("loopStart"));
     loopEndParam = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("loopEnd"));
+    pitchShiftParam = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("pitchShift"));
     hfBoostParam = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("hfBoost"));
     microMovementParam = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("microMovement"));
     windowTypeParam = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter("windowType"));
@@ -487,7 +493,7 @@ void GrainfreezeAudioProcessor::performPhaseVocoder()
     // Calculate expected phase advance per bin for one hop
     float expectedPhaseAdvance = juce::MathConstants<float>::twoPi * currentHopSize / currentFftSize;
 
-    // Process each frequency bin
+    // Process each frequency bin to get magnitude and instantaneous frequency
     for (int bin = 0; bin <= currentFftSize / 2; ++bin)
     {
         // Extract real and imaginary components
@@ -498,15 +504,6 @@ void GrainfreezeAudioProcessor::performPhaseVocoder()
         float magnitude = std::sqrt(real * real + imag * imag);
         float phase = std::atan2(imag, real);
 
-        // Store magnitude for visualization
-        spectrumMagnitudes[bin] = magnitude;
-
-        // Apply high-frequency boost (scaled by parameter)
-        float freqRatio = static_cast<float>(bin) / (currentFftSize / 2);
-        float hfBoostAmount = hfBoostParam->get() / 100.0f;
-        float hfBoost = 1.0f + (freqRatio * hfBoostAmount);
-        magnitude *= hfBoost;
-
         // Calculate phase difference from previous frame
         float phaseDiff = phase - previousPhase[bin];
         previousPhase[bin] = phase;
@@ -515,24 +512,64 @@ void GrainfreezeAudioProcessor::performPhaseVocoder()
         float deviation = phaseDiff - (bin * expectedPhaseAdvance);
 
         // Wrap deviation to [-π, π] range
-        while (deviation > juce::MathConstants<float>::pi)
-            deviation -= juce::MathConstants<float>::twoPi;
-        while (deviation < -juce::MathConstants<float>::pi)
-            deviation += juce::MathConstants<float>::twoPi;
+        deviation = juce::fmod(deviation + juce::MathConstants<float>::pi, juce::MathConstants<float>::twoPi);
+        if (deviation < 0) deviation += juce::MathConstants<float>::twoPi;
+        deviation -= juce::MathConstants<float>::pi;
 
-        // Calculate true instantaneous frequency
-        float trueFreq = bin * expectedPhaseAdvance + deviation;
+        // Store magnitude and phase advance for resampling
+        magnitudeBuffer[bin] = magnitude;
+        phaseAdvanceBuffer[bin] = (bin * expectedPhaseAdvance) + deviation;
+    }
 
-        // Advance synthesis phase with time-stretched frequency
-        synthesisPhase[bin] += trueFreq * stretch;
+    // --- Pitch Shifting Implementation ---
+    float pitchShiftSemitones = pitchShiftParam->get();
+    float pitchFactor = std::pow(2.0f, pitchShiftSemitones / 12.0f);
+    int numBins = currentFftSize / 2 + 1;
+
+    // Clear synthesis buffer
+    std::fill(fftBuffer.begin(), fftBuffer.end(), 0.0f);
+
+    for (int bin = 0; bin < numBins; ++bin)
+    {
+        // Source bin position after pitch shifting
+        float sourceBin = static_cast<float>(bin) / pitchFactor;
+        
+        float magnitude = 0.0f;
+        float phaseAdvance = 0.0f;
+
+        if (sourceBin < static_cast<float>(numBins - 1))
+        {
+            int binLower = static_cast<int>(sourceBin);
+            int binUpper = binLower + 1;
+            float weightUpper = sourceBin - static_cast<float>(binLower);
+            float weightLower = 1.0f - weightUpper;
+
+            // Linear interpolation of magnitude and phase advance
+            magnitude = (magnitudeBuffer[binLower] * weightLower) + (magnitudeBuffer[binUpper] * weightUpper);
+            phaseAdvance = (phaseAdvanceBuffer[binLower] * weightLower) + (phaseAdvanceBuffer[binUpper] * weightUpper);
+            
+            // Re-scale phase advance for the target bin
+            phaseAdvance *= pitchFactor;
+        }
+
+        // Apply high-frequency boost (scaled by parameter)
+        float freqRatio = static_cast<float>(bin) / (numBins - 1);
+        float hfBoostAmount = hfBoostParam->get() / 100.0f;
+        float hfBoost = 1.0f + (freqRatio * hfBoostAmount);
+        magnitude *= hfBoost;
+
+        // Store magnitude for visualization
+        spectrumMagnitudes[bin] = magnitude;
+
+        // Advance synthesis phase (using the synthesis hop size = analysis hop size here)
+        synthesisPhase[bin] += phaseAdvance;
 
         // Wrap synthesis phase to [-π, π]
-        while (synthesisPhase[bin] > juce::MathConstants<float>::pi)
-            synthesisPhase[bin] -= juce::MathConstants<float>::twoPi;
-        while (synthesisPhase[bin] < -juce::MathConstants<float>::pi)
-            synthesisPhase[bin] += juce::MathConstants<float>::twoPi;
+        synthesisPhase[bin] = juce::fmod(synthesisPhase[bin] + juce::MathConstants<float>::pi, juce::MathConstants<float>::twoPi);
+        if (synthesisPhase[bin] < 0) synthesisPhase[bin] += juce::MathConstants<float>::twoPi;
+        synthesisPhase[bin] -= juce::MathConstants<float>::pi;
 
-        // Reconstruct complex spectrum with modified phase
+        // Reconstruct complex spectrum
         fftBuffer[bin * 2] = magnitude * std::cos(synthesisPhase[bin]);
         fftBuffer[bin * 2 + 1] = magnitude * std::sin(synthesisPhase[bin]);
     }
@@ -588,6 +625,8 @@ void GrainfreezeAudioProcessor::updateFftSize()
 
     previousPhase.resize(currentFftSize / 2 + 1, 0.0f);
     synthesisPhase.resize(currentFftSize / 2 + 1, 0.0f);
+    magnitudeBuffer.resize(currentFftSize / 2 + 1, 0.0f);
+    phaseAdvanceBuffer.resize(currentFftSize / 2 + 1, 0.0f);
     window.resize(currentFftSize);
 
     // Create window function
@@ -598,6 +637,8 @@ void GrainfreezeAudioProcessor::updateFftSize()
     std::fill(crossfadeBuffer.begin(), crossfadeBuffer.end(), 0.0f);
     std::fill(previousPhase.begin(), previousPhase.end(), 0.0f);
     std::fill(synthesisPhase.begin(), synthesisPhase.end(), 0.0f);
+    std::fill(magnitudeBuffer.begin(), magnitudeBuffer.end(), 0.0f);
+    std::fill(phaseAdvanceBuffer.begin(), phaseAdvanceBuffer.end(), 0.0f);
 
     outputWritePos = 0;
     grainCounter = 0;
