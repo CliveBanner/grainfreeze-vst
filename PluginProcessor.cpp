@@ -19,6 +19,7 @@ void GrainfreezeVoice::startNote(int midiNoteNumber, float velocity, juce::Synth
 {
     currentVelocity = velocity;
     
+    double numSamplesInAudio = static_cast<double>(processor.getLoadedAudio().getNumSamples());
     float minPos = processor.midiPosMinParam->get();
     float centerPos = processor.midiPosCenterParam->get();
     float maxPos = processor.midiPosMaxParam->get();
@@ -26,11 +27,11 @@ void GrainfreezeVoice::startNote(int midiNoteNumber, float velocity, juce::Synth
     float pos = (midiNoteNumber < 60) ? juce::jmap(static_cast<float>(midiNoteNumber), 0.0f, 60.0f, minPos, centerPos)
                                       : juce::jmap(static_cast<float>(midiNoteNumber), 60.0f, 127.0f, centerPos, maxPos);
     
-    double samplePos = static_cast<double>(pos) * static_cast<double>(processor.getLoadedAudio().getNumSamples());
+    double samplePos = static_cast<double>(pos) * numSamplesInAudio;
     
-    // For manual mode (dummy note 60), use the global processor's position
+    // For manual mode (dummy note 60), use current processor position
     if (!processor.midiModeParam->get() && midiNoteNumber == 60)
-        samplePos = static_cast<double>(processor.getPlayheadPosition()) * static_cast<double>(processor.getLoadedAudio().getNumSamples());
+        samplePos = static_cast<double>(processor.getPlayheadPosition()) * numSamplesInAudio;
 
     playbackPosition = samplePos;
     freezeTargetPosition = samplePos;
@@ -60,21 +61,39 @@ void GrainfreezeVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, i
     double endLim = static_cast<double>(processor.loopEndParam->get()) * numSamplesInAudio;
     if (startLim >= endLim) startLim = std::max(0.0, endLim - 1.0);
 
-    int currentHopSize = processor.getCurrentFftSize() / static_cast<int>(processor.hopSizeParam->get());
+    int fftSize = processor.getCurrentFftSize();
+    int currentHopSize = fftSize / static_cast<int>(processor.hopSizeParam->get());
     if (currentHopSize < 1) currentHopSize = 1;
 
     bool isMidiMode = processor.midiModeParam->get();
     bool isFreeze = processor.freezeModeParam->get();
     float speed = 1.0f / std::max(0.1f, processor.timeStretch->get());
 
+    // Update target position in real-time from parameters
+    if (isMidiMode)
+    {
+        int note = getCurrentlyPlayingNote();
+        float minPos = processor.midiPosMinParam->get();
+        float centerPos = processor.midiPosCenterParam->get();
+        float maxPos = processor.midiPosMaxParam->get();
+        
+        float pos = (note < 60) ? juce::jmap(static_cast<float>(note), 0.0f, 60.0f, minPos, centerPos)
+                                : juce::jmap(static_cast<float>(note), 60.0f, 127.0f, centerPos, maxPos);
+        
+        smoothedFreezePosition.setTargetValue(juce::jlimit(startLim, endLim, static_cast<double>(pos) * numSamplesInAudio));
+    }
+    else if (isFreeze)
+    {
+        smoothedFreezePosition.setTargetValue(juce::jlimit(startLim, endLim, static_cast<double>(processor.getPlayheadPosition()) * numSamplesInAudio));
+    }
+
     for (int sampleIdx = 0; sampleIdx < numSamples; ++sampleIdx)
     {
         if (isMidiMode || isFreeze)
         {
-            if (!isMidiMode) 
-                smoothedFreezePosition.setTargetValue(juce::jlimit(startLim, endLim, static_cast<double>(processor.getPlayheadPosition()) * numSamplesInAudio));
-            
             freezeCurrentPosition = smoothedFreezePosition.getNextValue();
+            
+            // Micro-movement
             freezeMicroCounter++;
             if (freezeMicroCounter >= currentHopSize / 4)
             {
@@ -174,8 +193,7 @@ void GrainfreezeVoice::performPhaseVocoder()
         }
         mag *= (1.0f + (static_cast<float>(bin) / static_cast<float>(numBins - 1) * (processor.hfBoostParam->get() / 100.0f)));
         
-        // Capture spectrum only for the first active voice to prevent flickering
-        if (this == processor.synth.getVoice(0) || !processor.midiModeParam->get())
+        if (this == processor.synth.getVoice(0) || processor.midiModeParam->get())
             spectrumMags[static_cast<size_t>(bin)] = mag;
 
         synthesisPhase[static_cast<size_t>(bin)] += phAdv;
@@ -291,7 +309,17 @@ void GrainfreezeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     static float lastHopVal = -1.0f; if (hopSizeParam->get() != lastHopVal) { lastHopVal = hopSizeParam->get(); updateHopSize(); }
     static int lastWinIdx = -1; if (windowTypeParam->getIndex() != lastWinIdx) { lastWinIdx = windowTypeParam->getIndex(); createWindow(); }
 
-    if (midiModeParam->get())
+    bool isMidi = midiModeParam->get();
+    static bool wasMidi = false;
+    
+    // Kill notes on transition to ensure clean state
+    if (isMidi != wasMidi)
+    {
+        synth.allNotesOff(0, false);
+        wasMidi = isMidi;
+    }
+
+    if (isMidi)
     {
         synth.renderNextBlock(buffer, midiMessages, 0, buffer.getNumSamples());
     }
