@@ -169,7 +169,8 @@ void WaveformDisplay::updateFromMouse(const juce::MouseEvent& event)
             processor.playheadPosParam->setValueNotifyingHost(np);
             processor.playheadPosParam->endChangeGesture();
         }
-        processor.setPlayheadPosition(np); 
+        processor.setPlayheadPosition(np);
+        repaint();
     }
 }
 
