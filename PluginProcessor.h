@@ -45,8 +45,8 @@ public:
     // Returns the plugin name
     const juce::String getName() const override;
 
-    // Returns false - this plugin doesn't accept MIDI
-    bool acceptsMidi() const override;
+    // Returns true - this plugin now accepts MIDI
+    bool acceptsMidi() const override { return true; }
 
     // Returns false - this plugin doesn't produce MIDI
     bool producesMidi() const override;
@@ -150,6 +150,42 @@ public:
     juce::AudioParameterChoice* windowTypeParam;     // Window function type
     juce::AudioParameterFloat* crossfadeLengthParam; // Crossfade length 1-8 hops
 
+    // Parameters - MIDI Controls
+    juce::AudioParameterBool* midiModeParam;         // Toggle MIDI-triggered polyphony
+    juce::AudioParameterFloat* midiPosMinParam;      // Position for MIDI note 0
+    juce::AudioParameterFloat* midiPosCenterParam;   // Position for MIDI note 60
+    juce::AudioParameterFloat* midiPosMaxParam;      // Position for MIDI note 127
+
+    // Voice structure for polyphony
+    struct Voice
+    {
+        bool isActive = false;
+        int midiNote = -1;
+        float velocity = 0.0f;
+        
+        double playbackPosition = 0.0;
+        double freezeCurrentPosition = 0.0;
+        double freezeTargetPosition = 0.0;
+        juce::SmoothedValue<double> smoothedFreezePosition;
+        
+        std::vector<float> previousPhase;
+        std::vector<float> synthesisPhase;
+        std::vector<float> outputAccum;
+        int outputWritePos = 0;
+        int grainCounter = 0;
+
+        // Micro-movement state per voice
+        float freezeMicroMovement = 0.0f;
+        int freezeMicroCounter = 0;
+    };
+
+    static const int maxVoices = 16;
+    std::array<Voice, maxVoices> voices;
+
+    // Helper to find an available or existing voice
+    Voice* findVoice(int midiNote);
+    Voice* findFreeVoice();
+
 private:
     //==============================================================================
     // Audio Data
@@ -193,12 +229,6 @@ private:
     std::vector<float> analysisFrame;     // Windowed input frame for FFT
     std::vector<float> synthesisFrame;    // Output frame from IFFT
     std::vector<float> fftBuffer;         // FFT work buffer (real/imag interleaved)
-    std::vector<float> outputAccum;       // Overlap-add accumulator
-    std::vector<float> crossfadeBuffer;   // Buffer for smooth transitions
-
-    // Phase Tracking for Phase Vocoder
-    std::vector<float> previousPhase;     // Previous frame phases for unwrapping
-    std::vector<float> synthesisPhase;    // Accumulated synthesis phases
     std::vector<float> magnitudeBuffer;    // Magnitudes for pitch shifting
     std::vector<float> phaseAdvanceBuffer; // Phase advances for pitch shifting
 
@@ -208,14 +238,13 @@ private:
     // Window Function
     std::vector<float> window;            // Window coefficients (Hann or Blackman-Harris)
 
-    // Grain Processing State
-    int outputWritePos = 0;  // Current write position in output accumulator
-    int grainCounter = 0;    // Counts down samples until next grain
-
     // Crossfade State (for smooth playhead jumps)
     bool needsCrossfade = false;  // Flag indicating crossfade in progress
     int crossfadeCounter = 0;     // Current position in crossfade
     int crossfadeSamples = 0;     // Total length of crossfade in samples
+
+    // Shared crossfade/utility buffer
+    std::vector<float> crossfadeBuffer;
 
     //==============================================================================
     // Internal Processing Methods
@@ -223,8 +252,8 @@ private:
     // Processes time stretching or freeze mode for a block of samples
     void processTimeStretch(juce::AudioBuffer<float>& outputBuffer, int numSamples);
 
-    // Performs phase vocoder analysis/synthesis on one grain
-    void performPhaseVocoder();
+    // Performs phase vocoder analysis/synthesis on one grain for a specific voice
+    void performPhaseVocoder(Voice& voice);
 
     // Creates window function based on current window type parameter
     void createWindow();

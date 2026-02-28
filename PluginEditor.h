@@ -105,10 +105,16 @@ private:
     juce::TextButton playButton;    // Toggles playback
     juce::TextButton freezeButton;  // Toggles freeze mode
     juce::ToggleButton syncToDawButton; // Toggles DAW sync
+    juce::TextButton midiModeButton;    // Toggles MIDI mode
 
     // Status Display
     juce::Label statusLabel;        // Shows playback status
     juce::Label recommendedLabel;   // Shows recommended settings
+
+    // Column Headers
+    juce::Label primaryControlsLabel;   // "Primary" header
+    juce::Label advancedControlsLabel;  // "Advanced" header
+    juce::Label midiControlsLabel;      // "MIDI Mapping" header
 
     // Primary Controls (Left Column)
     juce::Slider timeStretchSlider;  // Time stretch factor control
@@ -126,7 +132,7 @@ private:
     juce::Slider pitchShiftSlider;   // Pitch shift in semitones
     juce::Label pitchShiftLabel;
 
-    // Advanced Controls (Right Column)
+    // Advanced Controls (Center Column)
     juce::Slider hfBoostSlider;      // High-frequency boost control
     juce::Label hfBoostLabel;
 
@@ -139,9 +145,15 @@ private:
     juce::Slider crossfadeLengthSlider;  // Crossfade length control
     juce::Label crossfadeLengthLabel;
 
-    // Column Headers
-    juce::Label primaryControlsLabel;   // "Primary Controls" header
-    juce::Label advancedControlsLabel;  // "Advanced Controls" header
+    // MIDI Controls (Right Column)
+    juce::Slider midiPosMinSlider;      // Mapping for MIDI note 0
+    juce::Label midiPosMinLabel;
+    
+    juce::Slider midiPosCenterSlider;   // Mapping for MIDI note 60
+    juce::Label midiPosCenterLabel;
+    
+    juce::Slider midiPosMaxSlider;      // Mapping for MIDI note 127
+    juce::Label midiPosMaxLabel;
 
     std::unique_ptr<juce::FileChooser> fileChooser;  // File chooser dialog
 
@@ -158,8 +170,13 @@ private:
     std::unique_ptr<SliderAttachment> microMovementAttachment;
     std::unique_ptr<SliderAttachment> windowTypeAttachment;
     std::unique_ptr<SliderAttachment> crossfadeLengthAttachment;
+    std::unique_ptr<SliderAttachment> midiPosMinAttachment;
+    std::unique_ptr<SliderAttachment> midiPosCenterAttachment;
+    std::unique_ptr<SliderAttachment> midiPosMaxAttachment;
+    
     std::unique_ptr<ButtonAttachment> freezeModeAttachment;
     std::unique_ptr<ButtonAttachment> syncToDawAttachment;
+    std::unique_ptr<ButtonAttachment> midiModeAttachment;
 
     // Opens file chooser and loads selected audio file
     void loadAudioFile();
