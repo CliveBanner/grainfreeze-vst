@@ -24,13 +24,12 @@ void WaveformDisplay::paint(juce::Graphics& g)
     int height = getHeight();
     int centerY = height / 2;
 
-    float loopStartX = processor.loopStartParam->get() * static_cast<float>(width);
-    float loopEndX = processor.loopEndParam->get() * static_cast<float>(width);
-    
-    g.setColour(juce::Colours::darkgrey.withAlpha(0.2f));
-    g.fillRect(loopStartX, 0.0f, loopEndX - loopStartX, static_cast<float>(height));
+    bool isFreeze = processor.freezeModeParam->get();
+    bool isMidi = processor.midiModeParam->get();
+    bool showLoopMarkers = !isFreeze && !isMidi;
 
-    g.setColour(juce::Colours::lightblue);
+    // --- Waveform Rendering ---
+    g.setColour(juce::Colours::lightblue.withAlpha(0.8f));
     juce::Path waveformPath;
     bool firstPoint = true;
     const float* channelData = audio.getReadPointer(0);
@@ -47,19 +46,29 @@ void WaveformDisplay::paint(juce::Graphics& g)
             else waveformPath.lineTo(static_cast<float>(x), y);
         }
     }
-    g.strokePath(waveformPath, juce::PathStrokeType(1.5f));
+    g.strokePath(waveformPath, juce::PathStrokeType(1.0f));
 
-    g.setColour(juce::Colours::orange.withAlpha(0.7f));
-    g.drawLine(loopStartX, 0.0f, loopStartX, static_cast<float>(height), 1.5f);
-    g.drawLine(loopEndX, 0.0f, loopEndX, static_cast<float>(height), 1.5f);
-    
-    juce::Path startTri, endTri;
-    startTri.addTriangle(loopStartX - 6.0f, 0.0f, loopStartX + 6.0f, 0.0f, loopStartX, 12.0f);
-    endTri.addTriangle(loopEndX - 6.0f, 0.0f, loopEndX + 6.0f, 0.0f, loopEndX, 12.0f);
-    g.fillPath(startTri); g.fillPath(endTri);
+    // --- Loop Markers (Only in normal playback) ---
+    if (showLoopMarkers)
+    {
+        float loopStartX = processor.loopStartParam->get() * static_cast<float>(width);
+        float loopEndX = processor.loopEndParam->get() * static_cast<float>(width);
+        
+        g.setColour(juce::Colours::darkgrey.withAlpha(0.2f));
+        g.fillRect(loopStartX, 0.0f, loopEndX - loopStartX, static_cast<float>(height));
 
-    // Draw MIDI Mapping Markers
-    if (processor.midiModeParam->get())
+        g.setColour(juce::Colours::orange.withAlpha(0.7f));
+        g.drawLine(loopStartX, 0.0f, loopStartX, static_cast<float>(height), 1.5f);
+        g.drawLine(loopEndX, 0.0f, loopEndX, static_cast<float>(height), 1.5f);
+        
+        juce::Path startTri, endTri;
+        startTri.addTriangle(loopStartX - 6.0f, 0.0f, loopStartX + 6.0f, 0.0f, loopStartX, 12.0f);
+        endTri.addTriangle(loopEndX - 6.0f, 0.0f, loopEndX + 6.0f, 0.0f, loopEndX, 12.0f);
+        g.fillPath(startTri); g.fillPath(endTri);
+    }
+
+    // --- MIDI Mapping Markers ---
+    if (isMidi)
     {
         float minX = processor.midiPosMinParam->get() * static_cast<float>(width);
         float centerX = processor.midiPosCenterParam->get() * static_cast<float>(width);
@@ -77,31 +86,23 @@ void WaveformDisplay::paint(juce::Graphics& g)
         g.drawText("CENTER (C4)", static_cast<int>(centerX + 2), height - 15, 80, 12, juce::Justification::left);
         g.drawText("MAX (Note 127)", static_cast<int>(maxX - 82), height - 15, 80, 12, juce::Justification::right);
 
-        // --- NEW: Visualize Arriving MIDI Notes (Held Keys) ---
-        float minPos = processor.midiPosMinParam->get();
-        float centerPos = processor.midiPosCenterParam->get();
-        float maxPos = processor.midiPosMaxParam->get();
-
         for (int note = 0; note < 128; ++note)
         {
             float vel = processor.midiNoteStates[note].load();
             if (vel > 0.0f)
             {
-                float pos = (note < 60) ? juce::jmap(static_cast<float>(note), 0.0f, 60.0f, minPos, centerPos)
-                                        : juce::jmap(static_cast<float>(note), 60.0f, 127.0f, centerPos, maxPos);
+                float pos = (note < 60) ? juce::jmap(static_cast<float>(note), 0.0f, 60.0f, processor.midiPosMinParam->get(), processor.midiPosCenterParam->get())
+                                        : juce::jmap(static_cast<float>(note), 60.0f, 127.0f, processor.midiPosCenterParam->get(), processor.midiPosMaxParam->get());
                 float noteX = pos * static_cast<float>(width);
-                
                 g.setColour(juce::Colours::magenta.withAlpha(0.6f * vel + 0.2f));
                 g.drawVerticalLine(static_cast<int>(noteX), 0.0f, static_cast<float>(height));
-                g.drawText(juce::MidiMessage::getMidiNoteName(note, true, true, 3), 
-                           static_cast<int>(noteX - 20), 35, 40, 15, juce::Justification::centred);
+                g.drawText(juce::MidiMessage::getMidiNoteName(note, true, true, 3), static_cast<int>(noteX - 20), 35, 40, 15, juce::Justification::centred);
             }
         }
     }
 
-    // Draw synth playheads (actual active voices)
-    bool isMidiMode = processor.midiModeParam->get();
-    if (isMidiMode)
+    // --- Playheads ---
+    if (isMidi)
     {
         for (int i = 0; i < processor.synth.getNumVoices(); ++i)
         {
@@ -130,12 +131,21 @@ void WaveformDisplay::mouseDown(const juce::MouseEvent& event)
 {
     float width = static_cast<float>(getWidth());
     float mouseX = static_cast<float>(event.x);
-    float ls = processor.loopStartParam->get() * width;
-    float le = processor.loopEndParam->get() * width;
+    
+    bool isFreeze = processor.freezeModeParam->get();
+    bool isMidi = processor.midiModeParam->get();
 
-    if (std::abs(mouseX - ls) < 12.0f) { dragMode = DragMode::LoopStart; processor.loopStartParam->beginChangeGesture(); }
-    else if (std::abs(mouseX - le) < 12.0f) { dragMode = DragMode::LoopEnd; processor.loopEndParam->beginChangeGesture(); }
-    else { dragMode = DragMode::Playhead; if (processor.playheadPosParam) processor.playheadPosParam->beginChangeGesture(); }
+    if (!isFreeze && !isMidi)
+    {
+        float ls = processor.loopStartParam->get() * width;
+        float le = processor.loopEndParam->get() * width;
+
+        if (std::abs(mouseX - ls) < 12.0f) { dragMode = DragMode::LoopStart; processor.loopStartParam->beginChangeGesture(); return; }
+        if (std::abs(mouseX - le) < 12.0f) { dragMode = DragMode::LoopEnd; processor.loopEndParam->beginChangeGesture(); return; }
+    }
+
+    dragMode = DragMode::Playhead; 
+    if (processor.playheadPosParam) processor.playheadPosParam->beginChangeGesture();
     updateFromMouse(event);
 }
 
@@ -153,7 +163,14 @@ void WaveformDisplay::updateFromMouse(const juce::MouseEvent& event)
     float np = juce::jlimit(0.0f, 1.0f, static_cast<float>(event.x) / static_cast<float>(getWidth()));
     if (dragMode == DragMode::LoopStart) { float ep = processor.loopEndParam->get(); if (np >= ep) np = ep - 0.001f; *processor.loopStartParam = np; if (processor.playheadPosParam) *processor.playheadPosParam = np; processor.setPlayheadPosition(np); }
     else if (dragMode == DragMode::LoopEnd) { float sp = processor.loopStartParam->get(); if (np <= sp) np = sp + 0.001f; *processor.loopEndParam = np; }
-    else if (dragMode == DragMode::Playhead) { if (processor.playheadPosParam) *processor.playheadPosParam = np; processor.setPlayheadPosition(np); }
+    else if (dragMode == DragMode::Playhead) { 
+        if (processor.playheadPosParam) {
+            processor.playheadPosParam->beginChangeGesture();
+            processor.playheadPosParam->setValueNotifyingHost(np);
+            processor.playheadPosParam->endChangeGesture();
+        }
+        processor.setPlayheadPosition(np); 
+    }
 }
 
 void SpectrumVisualizer::updateSpectrum(const std::vector<float>& magnitudes, int fftSize, double sampleRate)
