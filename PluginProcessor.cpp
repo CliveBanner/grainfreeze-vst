@@ -352,12 +352,16 @@ void GrainfreezeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         juce::MidiBuffer dummyMidi;
         synth.renderNextBlock(buffer, dummyMidi, 0, buffer.getNumSamples());
 
-        if (v != nullptr && !isInFreezeMode && playing)
+        if (v != nullptr)
         {
-            float np = static_cast<float>(v->playbackPosition / static_cast<double>(loadedAudio.getNumSamples()));
+            float np = static_cast<float>(v->freezeCurrentPosition / static_cast<double>(loadedAudio.getNumSamples()));
             playheadPosition.store(np);
-            *playheadPosParam = np;
-            lastPlayheadParam = np;
+            
+            if (playing && !isInFreezeMode)
+            {
+                *playheadPosParam = np;
+                lastPlayheadParam = np;
+            }
         }
         else lastPlayheadParam = playheadPosParam->get();
     }
