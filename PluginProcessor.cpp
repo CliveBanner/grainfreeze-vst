@@ -351,6 +351,10 @@ void GrainfreezeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         }
         else lastPlayheadParam = playheadPosParam->get();
     }
+
+    // Global Mute: Silence output if stopped
+    if (!playing)
+        buffer.clear();
 }
 
 GrainfreezeVoice* GrainfreezeAudioProcessor::getManualVoice()
