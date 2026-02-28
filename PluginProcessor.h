@@ -135,6 +135,7 @@ public:
     std::vector<float>& getSpectrumMagnitudesRef() { return spectrumMagnitudes; }
 
     juce::Synthesiser synth;
+    GrainfreezeVoice* getManualVoice();
 
 private:
     juce::AudioBuffer<float> loadedAudio;
