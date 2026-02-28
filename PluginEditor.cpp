@@ -157,6 +157,10 @@ GrainfreezeAudioProcessorEditor::GrainfreezeAudioProcessorEditor(GrainfreezeAudi
     : AudioProcessorEditor(&p), audioProcessor(p), waveformDisplay(p), spectrumVisualizer(p)
 {
     setSize(900, 750);
+
+    addAndMakeVisible(waveformDisplay);
+    addAndMakeVisible(spectrumVisualizer);
+
     addAndMakeVisible(loadButton); loadButton.setButtonText("Load Audio"); loadButton.onClick = [this] { loadAudioFile(); };
     addAndMakeVisible(playButton); playButton.setButtonText("Play / Stop"); playButton.onClick = [this] { audioProcessor.setPlaying(!audioProcessor.isPlaying()); };
     addAndMakeVisible(freezeButton); freezeButton.setButtonText("Freeze"); freezeButton.setClickingTogglesState(true);
@@ -245,7 +249,10 @@ void GrainfreezeAudioProcessorEditor::resized()
     auto r10 = rc.removeFromTop(30); midiPosMinLabel.setBounds(r10.removeFromLeft(80)); midiPosMinSlider.setBounds(r10); rc.removeFromTop(2);
     auto r11 = rc.removeFromTop(30); midiPosCenterLabel.setBounds(r11.removeFromLeft(80)); midiPosCenterSlider.setBounds(r11); rc.removeFromTop(2);
     auto r12 = rc.removeFromTop(30); midiPosMaxLabel.setBounds(r12.removeFromLeft(80)); midiPosMaxSlider.setBounds(r12);
-    auto sa = b.removeFromBottom(40); recommendedLabel.setBounds(sa.removeFromRight(350)); statusLabel.setBounds(sa);
+    auto sa = b.removeFromBottom(40);
+    recommendedLabel.setBounds(sa.removeFromRight(350));
+    statusLabel.setBounds(sa);
+
     spectrumVisualizer.setBounds(b.removeFromBottom(120).reduced(10, 5));
     waveformDisplay.setBounds(b.reduced(10, 10));
 }
