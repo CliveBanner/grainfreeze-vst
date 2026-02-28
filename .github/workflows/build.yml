@@ -67,8 +67,11 @@ jobs:
           fi
           
           # Zip the artifacts for release
-          cd release_binaries
-          zip -r ../Grainfreeze-${{ matrix.platform }}.zip .
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            7z a ../Grainfreeze-${{ matrix.platform }}.zip .
+          else
+            zip -r ../Grainfreeze-${{ matrix.platform }}.zip .
+          fi
 
       - name: Upload Artifacts (Action Run)
         uses: actions/upload-artifact@v4
