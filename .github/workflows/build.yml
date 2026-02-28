@@ -39,8 +39,13 @@ jobs:
             libcurl4-openssl-dev
 
       - name: Configure CMake
+        shell: bash
         run: |
-          cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            cmake -B build -DCMAKE_BUILD_TYPE=Release
+          else
+            cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release
+          fi
 
       - name: Build Plugin
         run: |
