@@ -1,0 +1,38 @@
+# Build directories
+build/
+build_release/
+bin/
+obj/
+
+# JUCE/CMake specific
+.cache/
+.vscode/
+cmake-build-*/
+_deps/
+*.user
+*.suo
+*.userosscache
+*.sln
+*.vcxproj
+*.filters
+*.ipch
+*.aps
+*.ncb
+*.sdf
+*.opensdf
+*.opendb
+Debug/
+Release/
+x64/
+ipch/
+*.VC.db
+*.VC.VC.opendb
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
