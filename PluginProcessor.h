@@ -46,9 +46,21 @@ public:
     int freezeMicroCounter = 0;
     float currentVelocity = 0.0f;
 
+    // Per-voice DSP resources (Thread-safe)
+    void updateFftSize(int newSize);
+    std::unique_ptr<juce::dsp::FFT> fftAnalysis;
+    std::unique_ptr<juce::dsp::FFT> fftSynthesis;
+    std::vector<float> analysisFrame;
+    std::vector<float> fftBuffer;
+    std::vector<float> magnitudeBuffer;
+    std::vector<float> phaseAdvanceBuffer;
+    
+    juce::Random random;
+
 private:
     GrainfreezeAudioProcessor& processor;
     void performPhaseVocoder();
+    int currentVoiceFftSize = 0;
 };
 
 //==============================================================================
@@ -123,21 +135,11 @@ public:
     juce::AudioParameterFloat* midiPosCenterParam;
     juce::AudioParameterFloat* midiPosMaxParam;
 
-    // Shared resources accessed by voices
-    juce::dsp::FFT* getAnalysisFft() { return fftAnalysis.get(); }
-    juce::dsp::FFT* getSynthesisFft() { return fftSynthesis.get(); }
     const std::vector<float>& getWindow() const { return window; }
-    
-    std::vector<float>& getAnalysisFrame() { return analysisFrame; }
-    std::vector<float>& getFftBuffer() { return fftBuffer; }
-    std::vector<float>& getMagnitudeBuffer() { return magnitudeBuffer; }
-    std::vector<float>& getPhaseAdvanceBuffer() { return phaseAdvanceBuffer; }
     std::vector<float>& getSpectrumMagnitudesRef() { return spectrumMagnitudes; }
 
     juce::Synthesiser synth;
     GrainfreezeVoice* getManualVoice();
-
-    // Track active MIDI notes for visualization
     std::atomic<float> midiNoteStates[128];
 
 private:
@@ -156,34 +158,23 @@ private:
     double freezeCurrentPosition = 0.0;
     juce::SmoothedValue<double> smoothedFreezePosition;
 
-    float freezeMicroMovement = 0.0f;
-    int freezeMicroCounter = 0;
-
     int currentFftSize = 4096;
     int currentHopSize = 512;
     double currentSampleRate = 44100.0;
 
-    std::unique_ptr<juce::dsp::FFT> fftAnalysis;
-    std::unique_ptr<juce::dsp::FFT> fftSynthesis;
+    // Track parameter changes without statics
+    int lastFftSizeIndex = -1;
+    float lastHopSizeValue = -1.0f;
+    int lastWindowTypeIndex = -1;
 
-    std::vector<float> analysisFrame;
-    std::vector<float> synthesisFrame;
-    std::vector<float> fftBuffer;
-    std::vector<float> magnitudeBuffer;
-    std::vector<float> phaseAdvanceBuffer;
     std::vector<float> spectrumMagnitudes;
     std::vector<float> window;
-
-    bool needsCrossfade = false;
-    int crossfadeCounter = 0;
-    int crossfadeSamples = 0;
-    std::vector<float> crossfadeBuffer;
 
     void createWindow();
     void createHannWindow();
     void createBlackmanHarrisWindow();
-    void updateFftSize();
-    void updateHopSize();
+    void updateGlobalFftSettings();
+    void updateGlobalHopSize();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(GrainfreezeAudioProcessor)
 };
