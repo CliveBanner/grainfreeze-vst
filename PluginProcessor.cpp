@@ -8,6 +8,7 @@
 GrainfreezeVoice::GrainfreezeVoice(GrainfreezeAudioProcessor& p) : processor(p)
 {
     smoothedFreezePosition.reset(p.getCurrentSampleRate(), 0.1);
+    envelope.reset(p.getCurrentSampleRate(), 0.05); // 50ms fade
     random.setSeedRandomly();
 }
 
@@ -19,6 +20,9 @@ bool GrainfreezeVoice::canPlaySound(juce::SynthesiserSound* sound)
 void GrainfreezeVoice::startNote(int midiNoteNumber, float velocity, juce::SynthesiserSound*, int /*currentPitchWheelPosition*/)
 {
     currentVelocity = velocity;
+    isStopping = false;
+    envelope.setCurrentAndTargetValue(0.0f);
+    envelope.setTargetValue(1.0f);
     
     double numSamplesInAudio = static_cast<double>(processor.getLoadedAudio().getNumSamples());
     float minPos = processor.midiPosMinParam->get();
@@ -34,12 +38,10 @@ void GrainfreezeVoice::startNote(int midiNoteNumber, float velocity, juce::Synth
         samplePos = static_cast<double>(processor.getPlayheadPosition()) * numSamplesInAudio;
 
     playbackPosition = samplePos;
-    freezeTargetPosition = samplePos;
     freezeCurrentPosition = samplePos;
     smoothedFreezePosition.setCurrentAndTargetValue(samplePos);
     
-    // Ensure voice has buffers ready
-    updateFftSize(processor.getCurrentFftSize());
+    updateFftResources(processor.getCurrentFftSize());
     
     std::fill(previousPhase.begin(), previousPhase.end(), 0.0f);
     std::fill(synthesisPhase.begin(), synthesisPhase.end(), 0.0f);
@@ -50,25 +52,26 @@ void GrainfreezeVoice::startNote(int midiNoteNumber, float velocity, juce::Synth
 
 void GrainfreezeVoice::stopNote(float /*velocity*/, bool allowTailOff)
 {
-    juce::ignoreUnused(allowTailOff);
-    clearCurrentNote();
+    if (allowTailOff)
+    {
+        isStopping = true;
+        envelope.setTargetValue(0.0f);
+    }
+    else
+    {
+        clearCurrentNote();
+    }
 }
 
-void GrainfreezeVoice::updateFftSize(int newSize)
+void GrainfreezeVoice::updateFftResources(int newSize)
 {
-    if (currentVoiceFftSize == newSize && fftAnalysis != nullptr) return;
-    
+    if (currentVoiceFftSize == newSize) return;
     currentVoiceFftSize = newSize;
-    int order = 0; int t = newSize; while (t > 1) { t >>= 1; order++; }
-    
-    fftAnalysis = std::make_unique<juce::dsp::FFT>(order);
-    fftSynthesis = std::make_unique<juce::dsp::FFT>(order);
     
     analysisFrame.assign(static_cast<size_t>(newSize), 0.0f);
     fftBuffer.assign(static_cast<size_t>(newSize * 2), 0.0f);
     magnitudeBuffer.assign(static_cast<size_t>(newSize / 2 + 1), 0.0f);
     phaseAdvanceBuffer.assign(static_cast<size_t>(newSize / 2 + 1), 0.0f);
-    
     previousPhase.assign(static_cast<size_t>(newSize / 2 + 1), 0.0f);
     synthesisPhase.assign(static_cast<size_t>(newSize / 2 + 1), 0.0f);
     outputAccum.assign(static_cast<size_t>(newSize * 8), 0.0f);
@@ -87,8 +90,7 @@ void GrainfreezeVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, i
     int currentHopSize = fftSize / static_cast<int>(processor.hopSizeParam->get());
     if (currentHopSize < 1) currentHopSize = 1;
 
-    // Ensure voice resources match global settings
-    updateFftSize(fftSize);
+    updateFftResources(fftSize);
 
     bool isMidiMode = processor.midiModeParam->get();
     bool isFreeze = processor.freezeModeParam->get();
@@ -97,23 +99,19 @@ void GrainfreezeVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, i
     if (isMidiMode)
     {
         int note = getCurrentlyPlayingNote();
-        float minPos = processor.midiPosMinParam->get();
-        float centerPos = processor.midiPosCenterParam->get();
-        float maxPos = processor.midiPosMaxParam->get();
-        float pos = (note < 60) ? juce::jmap(static_cast<float>(note), 0.0f, 60.0f, minPos, centerPos)
-                                : juce::jmap(static_cast<float>(note), 60.0f, 127.0f, centerPos, maxPos);
+        float pos = (note < 60) ? juce::jmap(static_cast<float>(note), 0.0f, 60.0f, processor.midiPosMinParam->get(), processor.midiPosCenterParam->get())
+                                : juce::jmap(static_cast<float>(note), 60.0f, 127.0f, processor.midiPosCenterParam->get(), processor.midiPosMaxParam->get());
         smoothedFreezePosition.setTargetValue(juce::jlimit(startLim, endLim, static_cast<double>(pos) * numSamplesInAudio));
     }
 
     for (int sampleIdx = 0; sampleIdx < numSamples; ++sampleIdx)
     {
+        float gain = envelope.getNextValue();
+        if (isStopping && gain <= 0.001f) { clearCurrentNote(); break; }
+
         if (isMidiMode || isFreeze)
         {
-            if (!isMidiMode) 
-                smoothedFreezePosition.setTargetValue(juce::jlimit(startLim, endLim, static_cast<double>(processor.getPlayheadPosition()) * numSamplesInAudio));
-            
             freezeCurrentPosition = smoothedFreezePosition.getNextValue();
-            
             freezeMicroCounter++;
             if (freezeMicroCounter >= currentHopSize / 4)
             {
@@ -138,7 +136,7 @@ void GrainfreezeVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, i
         float outS = 0.0f;
         if (outputWritePos < static_cast<int>(outputAccum.size()))
         {
-            outS = outputAccum[static_cast<size_t>(outputWritePos)] * currentVelocity;
+            outS = outputAccum[static_cast<size_t>(outputWritePos)] * currentVelocity * gain;
             outputAccum[static_cast<size_t>(outputWritePos)] = 0.0f;
         }
 
@@ -174,7 +172,7 @@ void GrainfreezeVoice::performPhaseVocoder()
     }
 
     std::copy(analysisFrame.begin(), analysisFrame.begin() + fftSize, fftBuffer.begin());
-    fftAnalysis->performRealOnlyForwardTransform(fftBuffer.data(), true);
+    processor.getAnalysisFft(fftSize)->performRealOnlyForwardTransform(fftBuffer.data(), true);
 
     auto& spectrumMags = processor.getSpectrumMagnitudesRef();
     if (spectrumMags.size() != static_cast<size_t>(numBins)) spectrumMags.resize(static_cast<size_t>(numBins));
@@ -219,7 +217,7 @@ void GrainfreezeVoice::performPhaseVocoder()
         fftBuffer[static_cast<size_t>(bin * 2 + 1)] = mag * std::sin(synthesisPhase[static_cast<size_t>(bin)]);
     }
 
-    fftSynthesis->performRealOnlyInverseTransform(fftBuffer.data());
+    processor.getSynthesisFft(fftSize)->performRealOnlyInverseTransform(fftBuffer.data());
     float norm = 2.0f / (static_cast<float>(fftSize) / static_cast<float>(hopSize));
     for (int i = 0; i < fftSize; ++i)
     {
@@ -287,25 +285,18 @@ GrainfreezeAudioProcessor::GrainfreezeAudioProcessor()
     for (int i = 0; i < 16; ++i) synth.addVoice(new GrainfreezeVoice(*this));
     synth.addSound(new GrainfreezeSound());
     for (int i = 0; i < 128; ++i) midiNoteStates[i].store(0.0f);
-    updateGlobalFftSettings();
 }
 
 GrainfreezeAudioProcessor::~GrainfreezeAudioProcessor() {}
+
 const juce::String GrainfreezeAudioProcessor::getName() const { return JucePlugin_Name; }
-bool GrainfreezeAudioProcessor::producesMidi() const { return false; }
-bool GrainfreezeAudioProcessor::isMidiEffect() const { return false; }
-double GrainfreezeAudioProcessor::getTailLengthSeconds() const { return 0.0; }
-int GrainfreezeAudioProcessor::getNumPrograms() { return 1; }
-int GrainfreezeAudioProcessor::getCurrentProgram() { return 0; }
-void GrainfreezeAudioProcessor::setCurrentProgram(int index) { juce::ignoreUnused(index); }
-const juce::String GrainfreezeAudioProcessor::getProgramName(int index) { juce::ignoreUnused(index); return {}; }
-void GrainfreezeAudioProcessor::changeProgramName(int index, const juce::String& n) { juce::ignoreUnused(index, n); }
 
 void GrainfreezeAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     juce::ignoreUnused(samplesPerBlock);
     currentSampleRate = sampleRate;
     synth.setCurrentPlaybackSampleRate(sampleRate);
+    smoothedFreezePosition.reset(sampleRate, 0.1);
     updateGlobalFftSettings();
 }
 
@@ -351,16 +342,17 @@ void GrainfreezeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         float currentParam = playheadPosParam->get();
         if (std::abs(currentParam - lastPlayheadParam) > 0.00001f) { setPlayheadPosition(currentParam); lastPlayheadParam = currentParam; }
 
-        bool shouldBeActive = playing || freezeModeParam->get();
+        isInFreezeMode = freezeModeParam->get();
+        bool shouldBeActive = playing || isInFreezeMode;
         GrainfreezeVoice* v = getManualVoice();
 
         if (shouldBeActive && v == nullptr) synth.noteOn(1, 60, 1.0f);
-        else if (!shouldBeActive && v != nullptr) synth.noteOff(1, 60, 1.0f, false);
+        else if (!shouldBeActive && v != nullptr) synth.noteOff(1, 60, 1.0f, true);
 
         juce::MidiBuffer dummyMidi;
         synth.renderNextBlock(buffer, dummyMidi, 0, buffer.getNumSamples());
 
-        if (v != nullptr && !freezeModeParam->get() && playing)
+        if (v != nullptr && !isInFreezeMode && playing)
         {
             float np = static_cast<float>(v->playbackPosition / static_cast<double>(loadedAudio.getNumSamples()));
             playheadPosition.store(np);
@@ -387,10 +379,26 @@ void GrainfreezeAudioProcessor::updateGlobalFftSettings()
     currentFftSize = fftSizes[fftSizeParam->getIndex()];
     updateGlobalHopSize();
     window.resize(static_cast<size_t>(currentFftSize)); createWindow();
-    
-    for (int i = 0; i < synth.getNumVoices(); ++i)
-        if (auto* v = dynamic_cast<GrainfreezeVoice*>(synth.getVoice(i)))
-            v->updateFftSize(currentFftSize);
+}
+
+juce::dsp::FFT* GrainfreezeAudioProcessor::getAnalysisFft(int size)
+{
+    if (analysisFftCache.find(size) == analysisFftCache.end())
+    {
+        int order = 0; int t = size; while (t > 1) { t >>= 1; order++; }
+        analysisFftCache[size] = std::make_unique<juce::dsp::FFT>(order);
+    }
+    return analysisFftCache[size].get();
+}
+
+juce::dsp::FFT* GrainfreezeAudioProcessor::getSynthesisFft(int size)
+{
+    if (synthesisFftCache.find(size) == synthesisFftCache.end())
+    {
+        int order = 0; int t = size; while (t > 1) { t >>= 1; order++; }
+        synthesisFftCache[size] = std::make_unique<juce::dsp::FFT>(order);
+    }
+    return synthesisFftCache[size].get();
 }
 
 void GrainfreezeAudioProcessor::updateGlobalHopSize() { currentHopSize = std::max(1, static_cast<int>(static_cast<float>(currentFftSize) / hopSizeParam->get())); }
@@ -407,7 +415,7 @@ void GrainfreezeAudioProcessor::loadAudioFile(const juce::File& file)
         juce::AudioBuffer<float> nb(static_cast<int>(r->numChannels), static_cast<int>(r->lengthInSamples));
         if (r->read(&nb, 0, static_cast<int>(r->lengthInSamples), 0, true, true)) {
             loadedAudio.makeCopyOf(nb); lastLoadedFileName = file.getFileName(); audioLoaded = true;
-            playheadPosition.store(0.0f); playbackPosition = 0.0; freezeCurrentPosition = 0.0; freezeTargetPosition = 0.0;
+            playheadPosition.store(0.0f); playbackPosition = 0.0;
             smoothedFreezePosition.setCurrentAndTargetValue(0.0);
             synth.allNotesOff(0, false);
         }
@@ -419,7 +427,6 @@ void GrainfreezeAudioProcessor::setPlayheadPosition(float np)
     float cp = juce::jlimit(0.0f, 1.0f, np); 
     double samplePos = static_cast<double>(cp) * static_cast<double>(loadedAudio.getNumSamples());
     if (isInFreezeMode || freezeModeParam->get()) {
-        freezeTargetPosition = samplePos;
         if (auto* v = getManualVoice()) v->smoothedFreezePosition.setTargetValue(samplePos);
     } else { 
         playbackPosition = samplePos; playheadPosition.store(cp); 
@@ -427,7 +434,7 @@ void GrainfreezeAudioProcessor::setPlayheadPosition(float np)
     } 
 }
 
-void GrainfreezeAudioProcessor::setPlaying(bool sp) { if (sp && !playing) playbackStartPosition = playbackPosition; else if (!sp && playing) { playbackPosition = playbackStartPosition; freezeCurrentPosition = playbackStartPosition; freezeTargetPosition = playbackStartPosition; smoothedFreezePosition.setCurrentAndTargetValue(playbackStartPosition); float np = (loadedAudio.getNumSamples() > 0) ? static_cast<float>(playbackPosition / static_cast<double>(loadedAudio.getNumSamples())) : 0.0f; playheadPosition.store(np); if (playheadPosParam) { playheadPosParam->beginChangeGesture(); *playheadPosParam = np; playheadPosParam->endChangeGesture(); } lastPlayheadParam = np; } playing = sp; }
+void GrainfreezeAudioProcessor::setPlaying(bool sp) { if (sp && !playing) playbackStartPosition = playbackPosition; else if (!sp && playing) { playbackPosition = playbackStartPosition; smoothedFreezePosition.setCurrentAndTargetValue(playbackStartPosition); float np = (loadedAudio.getNumSamples() > 0) ? static_cast<float>(playbackPosition / static_cast<double>(loadedAudio.getNumSamples())) : 0.0f; playheadPosition.store(np); if (playheadPosParam) { playheadPosParam->beginChangeGesture(); *playheadPosParam = np; playheadPosParam->endChangeGesture(); } lastPlayheadParam = np; } playing = sp; }
 
 juce::AudioProcessorEditor* GrainfreezeAudioProcessor::createEditor() { return new GrainfreezeAudioProcessorEditor(*this); }
 bool GrainfreezeAudioProcessor::hasEditor() const { return true; }

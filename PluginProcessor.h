@@ -3,8 +3,11 @@
 #include <JuceHeader.h>
 #include <vector>
 #include <complex>
+#include <map>
 
 //==============================================================================
+class GrainfreezeAudioProcessor;
+
 /** A simple sound for our synthesiser. */
 class GrainfreezeSound : public juce::SynthesiserSound
 {
@@ -13,8 +16,6 @@ public:
     bool appliesToNote(int) override { return true; }
     bool appliesToChannel(int) override { return true; }
 };
-
-class GrainfreezeAudioProcessor;
 
 /** A single voice for our synthesiser. */
 class GrainfreezeVoice : public juce::SynthesiserVoice
@@ -30,36 +31,40 @@ public:
 
     void renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int startSample, int numSamples) override;
 
-    // Per-voice state
+    // Public for access and visualization
     double playbackPosition = 0.0;
     double freezeCurrentPosition = 0.0;
-    double freezeTargetPosition = 0.0;
+    float currentVelocity = 0.0f;
     juce::SmoothedValue<double> smoothedFreezePosition;
     
+    // Micro-movement state per voice
+    float freezeMicroMovement = 0.0f;
+    int freezeMicroCounter = 0;
+
+    void updateFftResources(int newSize);
+
+private:
+    GrainfreezeAudioProcessor& processor;
+    void performPhaseVocoder();
+
+    // Per-voice DSP state
     std::vector<float> previousPhase;
     std::vector<float> synthesisPhase;
     std::vector<float> outputAccum;
     int outputWritePos = 0;
     int grainCounter = 0;
 
-    float freezeMicroMovement = 0.0f;
-    int freezeMicroCounter = 0;
-    float currentVelocity = 0.0f;
-
-    // Per-voice DSP resources (Thread-safe)
-    void updateFftSize(int newSize);
-    std::unique_ptr<juce::dsp::FFT> fftAnalysis;
-    std::unique_ptr<juce::dsp::FFT> fftSynthesis;
+    // Per-voice scratch buffers (Thread-safe)
     std::vector<float> analysisFrame;
     std::vector<float> fftBuffer;
     std::vector<float> magnitudeBuffer;
     std::vector<float> phaseAdvanceBuffer;
     
-    juce::Random random;
+    // Per-voice envelope to prevent clicks
+    juce::LinearSmoothedValue<float> envelope;
+    bool isStopping = false;
 
-private:
-    GrainfreezeAudioProcessor& processor;
-    void performPhaseVocoder();
+    juce::Random random;
     int currentVoiceFftSize = 0;
 };
 
@@ -83,15 +88,15 @@ public:
 
     const juce::String getName() const override;
     bool acceptsMidi() const override { return true; }
-    bool producesMidi() const override;
-    bool isMidiEffect() const override;
-    double getTailLengthSeconds() const override;
+    bool producesMidi() const override { return false; }
+    bool isMidiEffect() const override { return false; }
+    double getTailLengthSeconds() const override { return 0.0; }
 
-    int getNumPrograms() override;
-    int getCurrentProgram() override;
-    void setCurrentProgram(int index) override;
-    const juce::String getProgramName(int index) override;
-    void changeProgramName(int index, const juce::String& newName) override;
+    int getNumPrograms() override { return 1; }
+    int getCurrentProgram() override { return 0; }
+    void setCurrentProgram(int index) override { juce::ignoreUnused(index); }
+    const juce::String getProgramName(int index) override { juce::ignoreUnused(index); return {}; }
+    void changeProgramName(int index, const juce::String& newName) override { juce::ignoreUnused(index, newName); }
 
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
@@ -113,6 +118,7 @@ public:
     juce::AudioProcessorValueTreeState apvts;
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
+    // Parameters
     juce::AudioParameterFloat* timeStretch;
     juce::AudioParameterFloat* grainSizeParam;
     juce::AudioParameterFloat* hopSizeParam;
@@ -124,12 +130,10 @@ public:
     juce::AudioParameterFloat* loopStartParam;
     juce::AudioParameterFloat* loopEndParam;
     juce::AudioParameterFloat* pitchShiftParam;
-
     juce::AudioParameterFloat* hfBoostParam;
     juce::AudioParameterFloat* microMovementParam;
     juce::AudioParameterChoice* windowTypeParam;
     juce::AudioParameterFloat* crossfadeLengthParam;
-
     juce::AudioParameterBool* midiModeParam;
     juce::AudioParameterFloat* midiPosMinParam;
     juce::AudioParameterFloat* midiPosCenterParam;
@@ -138,9 +142,14 @@ public:
     const std::vector<float>& getWindow() const { return window; }
     std::vector<float>& getSpectrumMagnitudesRef() { return spectrumMagnitudes; }
 
+    // Professional Synth management
     juce::Synthesiser synth;
     GrainfreezeVoice* getManualVoice();
     std::atomic<float> midiNoteStates[128];
+
+    // Shared FFT object cache (Thread-safe read access)
+    juce::dsp::FFT* getAnalysisFft(int size);
+    juce::dsp::FFT* getSynthesisFft(int size);
 
 private:
     juce::AudioBuffer<float> loadedAudio;
@@ -162,13 +171,16 @@ private:
     int currentHopSize = 512;
     double currentSampleRate = 44100.0;
 
-    // Track parameter changes without statics
     int lastFftSizeIndex = -1;
     float lastHopSizeValue = -1.0f;
     int lastWindowTypeIndex = -1;
 
     std::vector<float> spectrumMagnitudes;
     std::vector<float> window;
+
+    // FFT Object Cache
+    std::map<int, std::unique_ptr<juce::dsp::FFT>> analysisFftCache;
+    std::map<int, std::unique_ptr<juce::dsp::FFT>> synthesisFftCache;
 
     void createWindow();
     void createHannWindow();
