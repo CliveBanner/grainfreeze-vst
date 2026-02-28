@@ -70,29 +70,24 @@ void WaveformDisplay::paint(juce::Graphics& g)
     // --- MIDI Mapping Markers ---
     if (isMidi)
     {
-        float minX = processor.midiPosMinParam->get() * static_cast<float>(width);
-        float centerX = processor.midiPosCenterParam->get() * static_cast<float>(width);
-        float maxX = processor.midiPosMaxParam->get() * static_cast<float>(width);
+        float startX = processor.midiStartPosParam->get() * static_cast<float>(width);
+        float endX = processor.midiEndPosParam->get() * static_cast<float>(width);
 
-        g.setColour(juce::Colours::red.withAlpha(0.4f));
-        g.drawVerticalLine(static_cast<int>(minX), 0.0f, static_cast<float>(height));
-        g.drawVerticalLine(static_cast<int>(maxX), 0.0f, static_cast<float>(height));
-        g.setColour(juce::Colours::yellow.withAlpha(0.5f));
-        g.drawVerticalLine(static_cast<int>(centerX), 0.0f, static_cast<float>(height));
+        g.setColour(juce::Colours::red.withAlpha(0.6f));
+        g.drawVerticalLine(static_cast<int>(startX), 0.0f, static_cast<float>(height));
+        g.drawVerticalLine(static_cast<int>(endX), 0.0f, static_cast<float>(height));
 
         g.setFont(10.0f);
         g.setColour(juce::Colours::white.withAlpha(0.7f));
-        g.drawText("MIN (Note 0)", static_cast<int>(minX + 2), height - 15, 80, 12, juce::Justification::left);
-        g.drawText("CENTER (C4)", static_cast<int>(centerX + 2), height - 15, 80, 12, juce::Justification::left);
-        g.drawText("MAX (Note 127)", static_cast<int>(maxX - 82), height - 15, 80, 12, juce::Justification::right);
+        g.drawText("MIDI START (Note 0)", static_cast<int>(startX + 2), height - 15, 120, 12, juce::Justification::left);
+        g.drawText("MIDI END (Note 127)", static_cast<int>(endX - 122), height - 15, 120, 12, juce::Justification::right);
 
         for (int note = 0; note < 128; ++note)
         {
             float vel = processor.midiNoteStates[note].load();
             if (vel > 0.0f)
             {
-                float pos = (note < 60) ? juce::jmap(static_cast<float>(note), 0.0f, 60.0f, processor.midiPosMinParam->get(), processor.midiPosCenterParam->get())
-                                        : juce::jmap(static_cast<float>(note), 60.0f, 127.0f, processor.midiPosCenterParam->get(), processor.midiPosMaxParam->get());
+                float pos = juce::jmap(static_cast<float>(note), 0.0f, 127.0f, processor.midiStartPosParam->get(), processor.midiEndPosParam->get());
                 float noteX = pos * static_cast<float>(width);
                 g.setColour(juce::Colours::magenta.withAlpha(0.6f * vel + 0.2f));
                 g.drawVerticalLine(static_cast<int>(noteX), 0.0f, static_cast<float>(height));
@@ -131,21 +126,15 @@ void WaveformDisplay::mouseDown(const juce::MouseEvent& event)
 {
     float width = static_cast<float>(getWidth());
     float mouseX = static_cast<float>(event.x);
-    
     bool isFreeze = processor.freezeModeParam->get();
     bool isMidi = processor.midiModeParam->get();
-
-    if (!isFreeze && !isMidi)
-    {
+    if (!isFreeze && !isMidi) {
         float ls = processor.loopStartParam->get() * width;
         float le = processor.loopEndParam->get() * width;
-
         if (std::abs(mouseX - ls) < 12.0f) { dragMode = DragMode::LoopStart; processor.loopStartParam->beginChangeGesture(); return; }
         if (std::abs(mouseX - le) < 12.0f) { dragMode = DragMode::LoopEnd; processor.loopEndParam->beginChangeGesture(); return; }
     }
-
-    dragMode = DragMode::Playhead; 
-    if (processor.playheadPosParam) processor.playheadPosParam->beginChangeGesture();
+    dragMode = DragMode::Playhead; if (processor.playheadPosParam) processor.playheadPosParam->beginChangeGesture();
     updateFromMouse(event);
 }
 
@@ -163,15 +152,7 @@ void WaveformDisplay::updateFromMouse(const juce::MouseEvent& event)
     float np = juce::jlimit(0.0f, 1.0f, static_cast<float>(event.x) / static_cast<float>(getWidth()));
     if (dragMode == DragMode::LoopStart) { float ep = processor.loopEndParam->get(); if (np >= ep) np = ep - 0.001f; *processor.loopStartParam = np; if (processor.playheadPosParam) *processor.playheadPosParam = np; processor.setPlayheadPosition(np); }
     else if (dragMode == DragMode::LoopEnd) { float sp = processor.loopStartParam->get(); if (np <= sp) np = sp + 0.001f; *processor.loopEndParam = np; }
-    else if (dragMode == DragMode::Playhead) { 
-        if (processor.playheadPosParam) {
-            processor.playheadPosParam->beginChangeGesture();
-            processor.playheadPosParam->setValueNotifyingHost(np);
-            processor.playheadPosParam->endChangeGesture();
-        }
-        processor.setPlayheadPosition(np);
-        repaint();
-    }
+    else if (dragMode == DragMode::Playhead) { if (processor.playheadPosParam) { processor.playheadPosParam->beginChangeGesture(); processor.playheadPosParam->setValueNotifyingHost(np); processor.playheadPosParam->endChangeGesture(); } processor.setPlayheadPosition(np); repaint(); }
 }
 
 void SpectrumVisualizer::updateSpectrum(const std::vector<float>& magnitudes, int fftSize, double sampleRate)
@@ -215,8 +196,7 @@ GrainfreezeAudioProcessorEditor::GrainfreezeAudioProcessorEditor(GrainfreezeAudi
     : AudioProcessorEditor(&p), audioProcessor(p), waveformDisplay(p), spectrumVisualizer(p)
 {
     setSize(900, 750);
-    addAndMakeVisible(waveformDisplay);
-    addAndMakeVisible(spectrumVisualizer);
+    addAndMakeVisible(waveformDisplay); addAndMakeVisible(spectrumVisualizer);
     addAndMakeVisible(loadButton); loadButton.setButtonText("Load Audio"); loadButton.onClick = [this] { loadAudioFile(); };
     addAndMakeVisible(playButton); playButton.setButtonText("Play / Stop"); playButton.onClick = [this] { audioProcessor.setPlaying(!audioProcessor.isPlaying()); };
     addAndMakeVisible(freezeButton); freezeButton.setButtonText("Freeze"); freezeButton.setClickingTogglesState(true);
@@ -228,7 +208,7 @@ GrainfreezeAudioProcessorEditor::GrainfreezeAudioProcessorEditor(GrainfreezeAudi
     midiModeButton.onClick = [this] { if (midiModeButton.getToggleState()) audioProcessor.freezeModeParam->setValueNotifyingHost(0.0f); };
     midiModeAttachment = std::make_unique<ButtonAttachment>(audioProcessor.apvts, "midiMode", midiModeButton);
     addAndMakeVisible(statusLabel); statusLabel.setText("No audio", juce::dontSendNotification); statusLabel.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(recommendedLabel); recommendedLabel.setText("Recommended: Center 0.5 | Min 0.0 | Max 1.0", juce::dontSendNotification);
+    addAndMakeVisible(recommendedLabel); recommendedLabel.setText("MIDI Mapping: Full Linear 0-127", juce::dontSendNotification);
     recommendedLabel.setJustificationType(juce::Justification::centredRight); recommendedLabel.setFont(juce::FontOptions(11.0f).withStyle("Italic"));
     recommendedLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
     addAndMakeVisible(primaryControlsLabel); primaryControlsLabel.setText("Primary", juce::dontSendNotification); primaryControlsLabel.setFont(juce::FontOptions(14.0f).withStyle("Bold"));
@@ -258,15 +238,12 @@ GrainfreezeAudioProcessorEditor::GrainfreezeAudioProcessorEditor(GrainfreezeAudi
     addAndMakeVisible(crossfadeLengthSlider); crossfadeLengthSlider.setSliderStyle(juce::Slider::LinearHorizontal); crossfadeLengthSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 20);
     crossfadeLengthAttachment = std::make_unique<SliderAttachment>(audioProcessor.apvts, "crossfadeLength", crossfadeLengthSlider);
     addAndMakeVisible(crossfadeLengthLabel); crossfadeLengthLabel.setText("X-Fade", juce::dontSendNotification);
-    addAndMakeVisible(midiPosMinSlider); midiPosMinSlider.setSliderStyle(juce::Slider::LinearHorizontal); midiPosMinSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 20);
-    midiPosMinAttachment = std::make_unique<SliderAttachment>(audioProcessor.apvts, "midiPosMin", midiPosMinSlider);
-    addAndMakeVisible(midiPosMinLabel); midiPosMinLabel.setText("Min Pos", juce::dontSendNotification);
-    addAndMakeVisible(midiPosCenterSlider); midiPosCenterSlider.setSliderStyle(juce::Slider::LinearHorizontal); midiPosCenterSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 20);
-    midiPosCenterAttachment = std::make_unique<SliderAttachment>(audioProcessor.apvts, "midiPosCenter", midiPosCenterSlider);
-    addAndMakeVisible(midiPosCenterLabel); midiPosCenterLabel.setText("Center (C4)", juce::dontSendNotification);
-    addAndMakeVisible(midiPosMaxSlider); midiPosMaxSlider.setSliderStyle(juce::Slider::LinearHorizontal); midiPosMaxSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 20);
-    midiPosMaxAttachment = std::make_unique<SliderAttachment>(audioProcessor.apvts, "midiPosMax", midiPosMaxSlider);
-    addAndMakeVisible(midiPosMaxLabel); midiPosMaxLabel.setText("Max Pos", juce::dontSendNotification);
+    addAndMakeVisible(midiStartPosSlider); midiStartPosSlider.setSliderStyle(juce::Slider::LinearHorizontal); midiStartPosSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 20);
+    midiStartPosAttachment = std::make_unique<SliderAttachment>(audioProcessor.apvts, "midiStartPos", midiStartPosSlider);
+    addAndMakeVisible(midiStartPosLabel); midiStartPosLabel.setText("Start Pos", juce::dontSendNotification);
+    addAndMakeVisible(midiEndPosSlider); midiEndPosSlider.setSliderStyle(juce::Slider::LinearHorizontal); midiEndPosSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 20);
+    midiEndPosAttachment = std::make_unique<SliderAttachment>(audioProcessor.apvts, "midiEndPos", midiEndPosSlider);
+    addAndMakeVisible(midiEndPosLabel); midiEndPosLabel.setText("End Pos", juce::dontSendNotification);
     startTimerHz(30);
 }
 
@@ -298,9 +275,8 @@ void GrainfreezeAudioProcessorEditor::resized()
     auto r9 = cc.removeFromTop(30); crossfadeLengthLabel.setBounds(r9.removeFromLeft(75)); crossfadeLengthSlider.setBounds(r9);
     top.removeFromLeft(15);
     auto rc = top; midiControlsLabel.setBounds(rc.removeFromTop(20)); rc.removeFromTop(5);
-    auto r10 = rc.removeFromTop(30); midiPosMinLabel.setBounds(r10.removeFromLeft(80)); midiPosMinSlider.setBounds(r10); rc.removeFromTop(2);
-    auto r11 = rc.removeFromTop(30); midiPosCenterLabel.setBounds(r11.removeFromLeft(80)); midiPosCenterSlider.setBounds(r11); rc.removeFromTop(2);
-    auto r12 = rc.removeFromTop(30); midiPosMaxLabel.setBounds(r12.removeFromLeft(80)); midiPosMaxSlider.setBounds(r12);
+    auto r10 = rc.removeFromTop(30); midiStartPosLabel.setBounds(r10.removeFromLeft(80)); midiStartPosSlider.setBounds(r10); rc.removeFromTop(2);
+    auto r11 = rc.removeFromTop(30); midiEndPosLabel.setBounds(r11.removeFromLeft(80)); midiEndPosSlider.setBounds(r11);
     auto sa = b.removeFromBottom(40); recommendedLabel.setBounds(sa.removeFromRight(350)); statusLabel.setBounds(sa);
     spectrumVisualizer.setBounds(b.removeFromBottom(120).reduced(10, 5));
     waveformDisplay.setBounds(b.reduced(10, 10));

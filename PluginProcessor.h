@@ -135,9 +135,8 @@ public:
     juce::AudioParameterChoice* windowTypeParam;
     juce::AudioParameterFloat* crossfadeLengthParam;
     juce::AudioParameterBool* midiModeParam;
-    juce::AudioParameterFloat* midiPosMinParam;
-    juce::AudioParameterFloat* midiPosCenterParam;
-    juce::AudioParameterFloat* midiPosMaxParam;
+    juce::AudioParameterFloat* midiStartPosParam;
+    juce::AudioParameterFloat* midiEndPosParam;
 
     const std::vector<float>& getWindow() const { return window; }
     std::vector<float>& getSpectrumMagnitudesRef() { return spectrumMagnitudes; }

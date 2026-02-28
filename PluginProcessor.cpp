@@ -25,12 +25,11 @@ void GrainfreezeVoice::startNote(int midiNoteNumber, float velocity, juce::Synth
     envelope.setTargetValue(1.0f);
     
     double numSamplesInAudio = static_cast<double>(processor.getLoadedAudio().getNumSamples());
-    float minPos = processor.midiPosMinParam->get();
-    float centerPos = processor.midiPosCenterParam->get();
-    float maxPos = processor.midiPosMaxParam->get();
+    float startPos = processor.midiStartPosParam->get();
+    float endPos = processor.midiEndPosParam->get();
     
-    float pos = (midiNoteNumber < 60) ? juce::jmap(static_cast<float>(midiNoteNumber), 0.0f, 60.0f, minPos, centerPos)
-                                      : juce::jmap(static_cast<float>(midiNoteNumber), 60.0f, 127.0f, centerPos, maxPos);
+    // Linear mapping between Start Pos (Note 0) and End Pos (Note 127)
+    float pos = juce::jmap(static_cast<float>(midiNoteNumber), 0.0f, 127.0f, startPos, endPos);
     
     double samplePos = static_cast<double>(pos) * numSamplesInAudio;
     
@@ -99,8 +98,9 @@ void GrainfreezeVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, i
     if (isMidiMode)
     {
         int note = getCurrentlyPlayingNote();
-        float pos = (note < 60) ? juce::jmap(static_cast<float>(note), 0.0f, 60.0f, processor.midiPosMinParam->get(), processor.midiPosCenterParam->get())
-                                : juce::jmap(static_cast<float>(note), 60.0f, 127.0f, processor.midiPosCenterParam->get(), processor.midiPosMaxParam->get());
+        float startPos = processor.midiStartPosParam->get();
+        float endPos = processor.midiEndPosParam->get();
+        float pos = juce::jmap(static_cast<float>(note), 0.0f, 127.0f, startPos, endPos);
         smoothedFreezePosition.setTargetValue(juce::jlimit(startLim, endLim, static_cast<double>(pos) * numSamplesInAudio));
     }
 
@@ -111,6 +111,9 @@ void GrainfreezeVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, i
 
         if (isMidiMode || isFreeze)
         {
+            if (!isMidiMode) 
+                smoothedFreezePosition.setTargetValue(juce::jlimit(startLim, endLim, static_cast<double>(processor.getPlayheadPosition()) * numSamplesInAudio));
+            
             freezeCurrentPosition = smoothedFreezePosition.getNextValue();
             freezeMicroCounter++;
             if (freezeMicroCounter >= currentHopSize / 4)
@@ -251,9 +254,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout GrainfreezeAudioProcessor::c
     layout.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID("windowType", 1), "Window Type", wc, 1));
     layout.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID("crossfadeLength", 1), "Crossfade Length", juce::NormalisableRange<float>(1.0f, 8.0f, 0.5f), 2.0f));
     layout.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID("midiMode", 1), "MIDI Mode", false));
-    layout.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID("midiPosMin", 1), "MIDI Min Pos", juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f), 0.0f));
-    layout.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID("midiPosCenter", 1), "MIDI Center Pos (C4)", juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f), 0.5f));
-    layout.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID("midiPosMax", 1), "MIDI Max Pos", juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f), 1.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID("midiStartPos", 1), "MIDI Start Pos", juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f), 0.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID("midiEndPos", 1), "MIDI End Pos", juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f), 1.0f));
     return layout;
 }
 
@@ -277,9 +279,8 @@ GrainfreezeAudioProcessor::GrainfreezeAudioProcessor()
     windowTypeParam = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter("windowType"));
     crossfadeLengthParam = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("crossfadeLength"));
     midiModeParam = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter("midiMode"));
-    midiPosMinParam = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("midiPosMin"));
-    midiPosCenterParam = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("midiPosCenter"));
-    midiPosMaxParam = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("midiPosMax"));
+    midiStartPosParam = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("midiStartPos"));
+    midiEndPosParam = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("midiEndPos"));
 
     lastPlayheadParam = playheadPosParam->get();
     for (int i = 0; i < 16; ++i) synth.addVoice(new GrainfreezeVoice(*this));
@@ -288,7 +289,6 @@ GrainfreezeAudioProcessor::GrainfreezeAudioProcessor()
 }
 
 GrainfreezeAudioProcessor::~GrainfreezeAudioProcessor() {}
-
 const juce::String GrainfreezeAudioProcessor::getName() const { return JucePlugin_Name; }
 
 void GrainfreezeAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)

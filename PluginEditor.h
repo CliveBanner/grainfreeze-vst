@@ -4,160 +4,98 @@
 #include "PluginProcessor.h"
 
 //==============================================================================
-// Waveform Display Component
-// Displays audio waveform and playhead position, allows scrubbing
-//==============================================================================
-
 class WaveformDisplay : public juce::Component
 {
 public:
     WaveformDisplay(GrainfreezeAudioProcessor& p) : processor(p) {}
-
-    // Draws the waveform and playhead
     void paint(juce::Graphics& g) override;
-
-    // Handles mouse click to jump playhead
     void mouseDown(const juce::MouseEvent& event) override;
-
-    // Handles mouse drag for scrubbing
     void mouseDrag(const juce::MouseEvent& event) override;
-
-    // Handles mouse release (currently no action)
     void mouseUp(const juce::MouseEvent& event) override;
 
 private:
     GrainfreezeAudioProcessor& processor;
-
     enum class DragMode { None, Playhead, LoopStart, LoopEnd };
     DragMode dragMode = DragMode::None;
-
-    // Updates playhead or loop markers based on mouse X coordinate
     void updateFromMouse(const juce::MouseEvent& event);
-
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WaveformDisplay)
 };
 
 //==============================================================================
-// Spectrum Visualizer Component
-// Displays FFT spectrum as vertical bars for musical notes
-//==============================================================================
-
 class SpectrumVisualizer : public juce::Component
 {
 public:
     SpectrumVisualizer(GrainfreezeAudioProcessor& p) : processor(p) {}
-
-    // Draws the spectrum visualization
     void paint(juce::Graphics& g) override;
-
-    // Updates the spectrum data from the processor
     void updateSpectrum(const std::vector<float>& magnitudes, int fftSize, double sampleRate);
 
 private:
     GrainfreezeAudioProcessor& processor;
-
-    // Spectrum data storage
-    std::vector<float> noteMagnitudes;  // Magnitude for each note
-    static const int numNotes = 88;     // Piano range: A0 to C8
-    static const int lowestNote = 21;   // MIDI note A0
-
-    // Converts frequency to MIDI note number
+    std::vector<float> noteMagnitudes;
+    static const int numNotes = 88;
+    static const int lowestNote = 21;
     int frequencyToMidiNote(float frequency);
-
-    // Converts MIDI note to note name string
     juce::String midiNoteToName(int midiNote);
-
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectrumVisualizer)
 };
 
 //==============================================================================
-// Main Plugin Editor
-// Two-column layout with primary and advanced controls
-//==============================================================================
-
-class GrainfreezeAudioProcessorEditor : public juce::AudioProcessorEditor,
-    public juce::Timer
+class GrainfreezeAudioProcessorEditor : public juce::AudioProcessorEditor, public juce::Timer
 {
 public:
     GrainfreezeAudioProcessorEditor(GrainfreezeAudioProcessor&);
     ~GrainfreezeAudioProcessorEditor() override;
 
-    // Draws the background
     void paint(juce::Graphics&) override;
-
-    // Layouts all UI components
     void resized() override;
-
-    // Updates UI state periodically (30Hz)
     void timerCallback() override;
 
 private:
     GrainfreezeAudioProcessor& audioProcessor;
 
-    // Waveform Display
     WaveformDisplay waveformDisplay;
-
-    // Spectrum Visualizer
     SpectrumVisualizer spectrumVisualizer;
 
-    // Control Buttons
-    juce::TextButton loadButton;    // Loads audio file
-    juce::TextButton playButton;    // Toggles playback
-    juce::TextButton freezeButton;  // Toggles freeze mode
-    juce::ToggleButton syncToDawButton; // Toggles DAW sync
-    juce::TextButton midiModeButton;    // Toggles MIDI mode
+    juce::TextButton loadButton;
+    juce::TextButton playButton;
+    juce::TextButton freezeButton;
+    juce::ToggleButton syncToDawButton;
+    juce::TextButton midiModeButton;
 
-    // Status Display
-    juce::Label statusLabel;        // Shows playback status
-    juce::Label recommendedLabel;   // Shows recommended settings
+    juce::Label statusLabel;
+    juce::Label recommendedLabel;
 
-    // Column Headers
-    juce::Label primaryControlsLabel;   // "Primary" header
-    juce::Label advancedControlsLabel;  // "Advanced" header
-    juce::Label midiControlsLabel;      // "MIDI Mapping" header
+    juce::Label primaryControlsLabel;
+    juce::Label advancedControlsLabel;
+    juce::Label midiControlsLabel;
 
-    // Primary Controls (Left Column)
-    juce::Slider timeStretchSlider;  // Time stretch factor control
+    juce::Slider timeStretchSlider;
     juce::Label timeStretchLabel;
-
-    juce::Slider fftSizeSlider;      // FFT size selection
+    juce::Slider fftSizeSlider;
     juce::Label fftSizeLabel;
-
-    juce::Slider hopSizeSlider;      // Hop size divisor control
+    juce::Slider hopSizeSlider;
     juce::Label hopSizeLabel;
-
-    juce::Slider glideSlider;        // Freeze mode glide time control
+    juce::Slider glideSlider;
     juce::Label glideLabel;
-
-    juce::Slider pitchShiftSlider;   // Pitch shift in semitones
+    juce::Slider pitchShiftSlider;
     juce::Label pitchShiftLabel;
 
-    // Advanced Controls (Center Column)
-    juce::Slider hfBoostSlider;      // High-frequency boost control
+    juce::Slider hfBoostSlider;
     juce::Label hfBoostLabel;
-
-    juce::Slider microMovementSlider;  // Freeze micro-movement control
+    juce::Slider microMovementSlider;
     juce::Label microMovementLabel;
-
-    juce::Slider windowTypeSlider;   // Window function type selector
+    juce::Slider windowTypeSlider;
     juce::Label windowTypeLabel;
-
-    juce::Slider crossfadeLengthSlider;  // Crossfade length control
+    juce::Slider crossfadeLengthSlider;
     juce::Label crossfadeLengthLabel;
 
-    // MIDI Controls (Right Column)
-    juce::Slider midiPosMinSlider;      // Mapping for MIDI note 0
-    juce::Label midiPosMinLabel;
-    
-    juce::Slider midiPosCenterSlider;   // Mapping for MIDI note 60
-    juce::Label midiPosCenterLabel;
-    
-    juce::Slider midiPosMaxSlider;      // Mapping for MIDI note 127
-    juce::Label midiPosMaxLabel;
+    juce::Slider midiStartPosSlider;
+    juce::Label midiStartPosLabel;
+    juce::Slider midiEndPosSlider;
+    juce::Label midiEndPosLabel;
 
-    std::unique_ptr<juce::FileChooser> fileChooser;  // File chooser dialog
+    std::unique_ptr<juce::FileChooser> fileChooser;
 
-    // Attachments for parameters
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
@@ -170,15 +108,13 @@ private:
     std::unique_ptr<SliderAttachment> microMovementAttachment;
     std::unique_ptr<SliderAttachment> windowTypeAttachment;
     std::unique_ptr<SliderAttachment> crossfadeLengthAttachment;
-    std::unique_ptr<SliderAttachment> midiPosMinAttachment;
-    std::unique_ptr<SliderAttachment> midiPosCenterAttachment;
-    std::unique_ptr<SliderAttachment> midiPosMaxAttachment;
+    std::unique_ptr<SliderAttachment> midiStartPosAttachment;
+    std::unique_ptr<SliderAttachment> midiEndPosAttachment;
     
     std::unique_ptr<ButtonAttachment> freezeModeAttachment;
     std::unique_ptr<ButtonAttachment> syncToDawAttachment;
     std::unique_ptr<ButtonAttachment> midiModeAttachment;
 
-    // Opens file chooser and loads selected audio file
     void loadAudioFile();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(GrainfreezeAudioProcessorEditor)
