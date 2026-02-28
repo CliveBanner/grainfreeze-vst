@@ -13,7 +13,7 @@
 
 ## Inspiration & Development
 
-Grainfreeze is inspired by the **Audiostretch App** from Bandlab. It was created to provide a VST/Standalone equivalent for tonal zero-playback-speed freezing, which is often missing in standard time-stretching tools.
+**Grainfreeze** was originally developed by [aquanodemusic](https://aquanode.gumroad.com) (original project available on [Gumroad](https://aquanode.gumroad.com/l/Grainfreeze)). It is inspired by the **Audiostretch App** from Bandlab. It was created to provide a VST/Standalone equivalent for tonal zero-playback-speed freezing, which is often missing in standard time-stretching tools.
 
 The project was developed with the assistance of AI (Claude) and is completely **open source**. If you are a C++ or DSP expert, feel free to dive into the code and improve the FFT implementation further!
 
@@ -43,4 +43,4 @@ This project is built using [JUCE](https://juce.com/) and CMake.
 Binaries for **Windows, macOS, and Linux** are automatically generated for every push to the `main` branch. You can find them in the **Actions** tab or the **Releases** section of the GitHub repository.
 
 ---
-*Created by GeminiDev | Inspired by Audiostretch*
+*Original Author: [aquanodemusic](https://aquanode.gumroad.com) | Inspired by Audiostretch*
