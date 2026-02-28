@@ -58,6 +58,27 @@ void WaveformDisplay::paint(juce::Graphics& g)
     endTri.addTriangle(loopEndX - 6.0f, 0.0f, loopEndX + 6.0f, 0.0f, loopEndX, 12.0f);
     g.fillPath(startTri); g.fillPath(endTri);
 
+    // Draw MIDI Mapping Markers
+    if (processor.midiModeParam->get())
+    {
+        float minX = processor.midiPosMinParam->get() * static_cast<float>(width);
+        float centerX = processor.midiPosCenterParam->get() * static_cast<float>(width);
+        float maxX = processor.midiPosMaxParam->get() * static_cast<float>(width);
+
+        g.setColour(juce::Colours::red.withAlpha(0.4f));
+        g.drawVerticalLine(static_cast<int>(minX), 0.0f, static_cast<float>(height));
+        g.drawVerticalLine(static_cast<int>(maxX), 0.0f, static_cast<float>(height));
+        
+        g.setColour(juce::Colours::yellow.withAlpha(0.5f));
+        g.drawVerticalLine(static_cast<int>(centerX), 0.0f, static_cast<float>(height));
+
+        g.setFont(10.0f);
+        g.setColour(juce::Colours::white.withAlpha(0.7f));
+        g.drawText("MIN (Note 0)", static_cast<int>(minX + 2), height - 15, 80, 12, juce::Justification::left);
+        g.drawText("CENTER (C4)", static_cast<int>(centerX + 2), height - 15, 80, 12, juce::Justification::left);
+        g.drawText("MAX (Note 127)", static_cast<int>(maxX - 82), height - 15, 80, 12, juce::Justification::right);
+    }
+
     // Draw playheads
     bool isMidiMode = processor.midiModeParam->get();
     
