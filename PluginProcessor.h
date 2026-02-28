@@ -137,6 +137,9 @@ public:
     juce::Synthesiser synth;
     GrainfreezeVoice* getManualVoice();
 
+    // Track active MIDI notes for visualization
+    std::atomic<float> midiNoteStates[128];
+
 private:
     juce::AudioBuffer<float> loadedAudio;
     bool audioLoaded = false;

@@ -29,7 +29,6 @@ void GrainfreezeVoice::startNote(int midiNoteNumber, float velocity, juce::Synth
     
     double samplePos = static_cast<double>(pos) * numSamplesInAudio;
     
-    // For manual mode (dummy note 60), use current processor position
     if (!processor.midiModeParam->get() && midiNoteNumber == 60)
         samplePos = static_cast<double>(processor.getPlayheadPosition()) * numSamplesInAudio;
 
@@ -69,17 +68,14 @@ void GrainfreezeVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, i
     bool isFreeze = processor.freezeModeParam->get();
     float speed = 1.0f / std::max(0.1f, processor.timeStretch->get());
 
-    // Update target position in real-time from parameters
     if (isMidiMode)
     {
         int note = getCurrentlyPlayingNote();
         float minPos = processor.midiPosMinParam->get();
         float centerPos = processor.midiPosCenterParam->get();
         float maxPos = processor.midiPosMaxParam->get();
-        
         float pos = (note < 60) ? juce::jmap(static_cast<float>(note), 0.0f, 60.0f, minPos, centerPos)
                                 : juce::jmap(static_cast<float>(note), 60.0f, 127.0f, centerPos, maxPos);
-        
         smoothedFreezePosition.setTargetValue(juce::jlimit(startLim, endLim, static_cast<double>(pos) * numSamplesInAudio));
     }
     else if (isFreeze)
@@ -92,8 +88,6 @@ void GrainfreezeVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, i
         if (isMidiMode || isFreeze)
         {
             freezeCurrentPosition = smoothedFreezePosition.getNextValue();
-            
-            // Micro-movement
             freezeMicroCounter++;
             if (freezeMicroCounter >= currentHopSize / 4)
             {
@@ -271,6 +265,9 @@ GrainfreezeAudioProcessor::GrainfreezeAudioProcessor()
     lastPlayheadParam = playheadPosParam->get();
     for (int i = 0; i < 16; ++i) synth.addVoice(new GrainfreezeVoice(*this));
     synth.addSound(new GrainfreezeSound());
+    
+    for (int i = 0; i < 128; ++i) midiNoteStates[i].store(0.0f);
+    
     updateFftSize();
 }
 
@@ -309,13 +306,22 @@ void GrainfreezeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     static float lastHopVal = -1.0f; if (hopSizeParam->get() != lastHopVal) { lastHopVal = hopSizeParam->get(); updateHopSize(); }
     static int lastWinIdx = -1; if (windowTypeParam->getIndex() != lastWinIdx) { lastWinIdx = windowTypeParam->getIndex(); createWindow(); }
 
+    // Update MIDI note states for visualization
+    for (const auto metadata : midiMessages)
+    {
+        auto msg = metadata.getMessage();
+        if (msg.isNoteOn()) midiNoteStates[msg.getNoteNumber()].store(msg.getFloatVelocity());
+        else if (msg.isNoteOff()) midiNoteStates[msg.getNoteNumber()].store(0.0f);
+        else if (msg.isAllNotesOff()) for (int i = 0; i < 128; ++i) midiNoteStates[i].store(0.0f);
+    }
+
     bool isMidi = midiModeParam->get();
     static bool wasMidi = false;
     
-    // Kill notes on transition to ensure clean state
     if (isMidi != wasMidi)
     {
         synth.allNotesOff(0, false);
+        for (int i = 0; i < 128; ++i) midiNoteStates[i].store(0.0f);
         wasMidi = isMidi;
     }
 
@@ -352,9 +358,7 @@ void GrainfreezeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         else lastPlayheadParam = playheadPosParam->get();
     }
 
-    // Global Mute: Silence output if stopped
-    if (!playing)
-        buffer.clear();
+    if (!playing) buffer.clear();
 }
 
 GrainfreezeVoice* GrainfreezeAudioProcessor::getManualVoice()

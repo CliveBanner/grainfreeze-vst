@@ -68,7 +68,6 @@ void WaveformDisplay::paint(juce::Graphics& g)
         g.setColour(juce::Colours::red.withAlpha(0.4f));
         g.drawVerticalLine(static_cast<int>(minX), 0.0f, static_cast<float>(height));
         g.drawVerticalLine(static_cast<int>(maxX), 0.0f, static_cast<float>(height));
-        
         g.setColour(juce::Colours::yellow.withAlpha(0.5f));
         g.drawVerticalLine(static_cast<int>(centerX), 0.0f, static_cast<float>(height));
 
@@ -77,11 +76,31 @@ void WaveformDisplay::paint(juce::Graphics& g)
         g.drawText("MIN (Note 0)", static_cast<int>(minX + 2), height - 15, 80, 12, juce::Justification::left);
         g.drawText("CENTER (C4)", static_cast<int>(centerX + 2), height - 15, 80, 12, juce::Justification::left);
         g.drawText("MAX (Note 127)", static_cast<int>(maxX - 82), height - 15, 80, 12, juce::Justification::right);
+
+        // --- NEW: Visualize Arriving MIDI Notes (Held Keys) ---
+        float minPos = processor.midiPosMinParam->get();
+        float centerPos = processor.midiPosCenterParam->get();
+        float maxPos = processor.midiPosMaxParam->get();
+
+        for (int note = 0; note < 128; ++note)
+        {
+            float vel = processor.midiNoteStates[note].load();
+            if (vel > 0.0f)
+            {
+                float pos = (note < 60) ? juce::jmap(static_cast<float>(note), 0.0f, 60.0f, minPos, centerPos)
+                                        : juce::jmap(static_cast<float>(note), 60.0f, 127.0f, centerPos, maxPos);
+                float noteX = pos * static_cast<float>(width);
+                
+                g.setColour(juce::Colours::magenta.withAlpha(0.6f * vel + 0.2f));
+                g.drawVerticalLine(static_cast<int>(noteX), 0.0f, static_cast<float>(height));
+                g.drawText(juce::MidiMessage::getMidiNoteName(note, true, true, 3), 
+                           static_cast<int>(noteX - 20), 35, 40, 15, juce::Justification::centred);
+            }
+        }
     }
 
-    // Draw playheads
+    // Draw synth playheads (actual active voices)
     bool isMidiMode = processor.midiModeParam->get();
-    
     if (isMidiMode)
     {
         for (int i = 0; i < processor.synth.getNumVoices(); ++i)
@@ -92,13 +111,8 @@ void WaveformDisplay::paint(juce::Graphics& g)
                 {
                     float px = (static_cast<float>(voice->freezeCurrentPosition) / static_cast<float>(numSamples)) * static_cast<float>(width);
                     g.setColour(juce::Colours::cyan.withAlpha(voice->currentVelocity * 0.8f + 0.2f));
-                    g.drawLine(px, 0.0f, px, static_cast<float>(height), 1.5f);
-                    g.fillEllipse(px - 4.0f, static_cast<float>(centerY) - 4.0f, 8.0f, 8.0f);
-                    
-                    // Draw note name above playhead
-                    g.setFont(12.0f);
-                    g.drawText(juce::MidiMessage::getMidiNoteName(voice->getCurrentlyPlayingNote(), true, true, 3), 
-                               static_cast<int>(px - 20), 15, 40, 15, juce::Justification::centred);
+                    g.drawLine(px, 0.0f, px, static_cast<float>(height), 2.0f);
+                    g.fillEllipse(px - 5.0f, static_cast<float>(centerY) - 5.0f, 10.0f, 10.0f);
                 }
             }
         }
@@ -183,41 +197,25 @@ GrainfreezeAudioProcessorEditor::GrainfreezeAudioProcessorEditor(GrainfreezeAudi
     : AudioProcessorEditor(&p), audioProcessor(p), waveformDisplay(p), spectrumVisualizer(p)
 {
     setSize(900, 750);
-
     addAndMakeVisible(waveformDisplay);
     addAndMakeVisible(spectrumVisualizer);
-
     addAndMakeVisible(loadButton); loadButton.setButtonText("Load Audio"); loadButton.onClick = [this] { loadAudioFile(); };
     addAndMakeVisible(playButton); playButton.setButtonText("Play / Stop"); playButton.onClick = [this] { audioProcessor.setPlaying(!audioProcessor.isPlaying()); };
-    
     addAndMakeVisible(freezeButton); freezeButton.setButtonText("Freeze"); freezeButton.setClickingTogglesState(true);
-    freezeButton.onClick = [this] {
-        if (freezeButton.getToggleState()) {
-            audioProcessor.midiModeParam->setValueNotifyingHost(0.0f);
-        }
-    };
+    freezeButton.onClick = [this] { if (freezeButton.getToggleState()) audioProcessor.midiModeParam->setValueNotifyingHost(0.0f); };
     freezeModeAttachment = std::make_unique<ButtonAttachment>(audioProcessor.apvts, "freezeMode", freezeButton);
-    
     addAndMakeVisible(syncToDawButton); syncToDawButton.setButtonText("Sync DAW");
     syncToDawAttachment = std::make_unique<ButtonAttachment>(audioProcessor.apvts, "syncToDaw", syncToDawButton);
-    
     addAndMakeVisible(midiModeButton); midiModeButton.setButtonText("MIDI Mode"); midiModeButton.setClickingTogglesState(true);
-    midiModeButton.onClick = [this] {
-        if (midiModeButton.getToggleState()) {
-            audioProcessor.freezeModeParam->setValueNotifyingHost(0.0f);
-        }
-    };
+    midiModeButton.onClick = [this] { if (midiModeButton.getToggleState()) audioProcessor.freezeModeParam->setValueNotifyingHost(0.0f); };
     midiModeAttachment = std::make_unique<ButtonAttachment>(audioProcessor.apvts, "midiMode", midiModeButton);
-
     addAndMakeVisible(statusLabel); statusLabel.setText("No audio", juce::dontSendNotification); statusLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(recommendedLabel); recommendedLabel.setText("Recommended: Center 0.5 | Min 0.0 | Max 1.0", juce::dontSendNotification);
     recommendedLabel.setJustificationType(juce::Justification::centredRight); recommendedLabel.setFont(juce::FontOptions(11.0f).withStyle("Italic"));
     recommendedLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
-
     addAndMakeVisible(primaryControlsLabel); primaryControlsLabel.setText("Primary", juce::dontSendNotification); primaryControlsLabel.setFont(juce::FontOptions(14.0f).withStyle("Bold"));
     addAndMakeVisible(advancedControlsLabel); advancedControlsLabel.setText("Advanced", juce::dontSendNotification); advancedControlsLabel.setFont(juce::FontOptions(14.0f).withStyle("Bold"));
     addAndMakeVisible(midiControlsLabel); midiControlsLabel.setText("MIDI Mapping", juce::dontSendNotification); midiControlsLabel.setFont(juce::FontOptions(14.0f).withStyle("Bold"));
-
     addAndMakeVisible(timeStretchSlider); timeStretchSlider.setSliderStyle(juce::Slider::LinearHorizontal); timeStretchSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 20);
     timeStretchAttachment = std::make_unique<SliderAttachment>(audioProcessor.apvts, "timeStretch", timeStretchSlider); addAndMakeVisible(timeStretchLabel); timeStretchLabel.setText("Stretch", juce::dontSendNotification);
     addAndMakeVisible(fftSizeSlider); fftSizeSlider.setSliderStyle(juce::Slider::LinearHorizontal); fftSizeSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 20);
@@ -230,7 +228,6 @@ GrainfreezeAudioProcessorEditor::GrainfreezeAudioProcessorEditor(GrainfreezeAudi
     addAndMakeVisible(pitchShiftSlider); pitchShiftSlider.setSliderStyle(juce::Slider::LinearHorizontal); pitchShiftSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 20);
     pitchShiftSlider.setTextValueSuffix(" st"); pitchShiftAttachment = std::make_unique<SliderAttachment>(audioProcessor.apvts, "pitchShift", pitchShiftSlider);
     addAndMakeVisible(pitchShiftLabel); pitchShiftLabel.setText("Pitch", juce::dontSendNotification);
-
     addAndMakeVisible(hfBoostSlider); hfBoostSlider.setSliderStyle(juce::Slider::LinearHorizontal); hfBoostSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 20);
     hfBoostSlider.setTextValueSuffix(" %"); hfBoostAttachment = std::make_unique<SliderAttachment>(audioProcessor.apvts, "hfBoost", hfBoostSlider);
     addAndMakeVisible(hfBoostLabel); hfBoostLabel.setText("HF Boost", juce::dontSendNotification);
@@ -243,7 +240,6 @@ GrainfreezeAudioProcessorEditor::GrainfreezeAudioProcessorEditor(GrainfreezeAudi
     addAndMakeVisible(crossfadeLengthSlider); crossfadeLengthSlider.setSliderStyle(juce::Slider::LinearHorizontal); crossfadeLengthSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 20);
     crossfadeLengthAttachment = std::make_unique<SliderAttachment>(audioProcessor.apvts, "crossfadeLength", crossfadeLengthSlider);
     addAndMakeVisible(crossfadeLengthLabel); crossfadeLengthLabel.setText("X-Fade", juce::dontSendNotification);
-
     addAndMakeVisible(midiPosMinSlider); midiPosMinSlider.setSliderStyle(juce::Slider::LinearHorizontal); midiPosMinSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 20);
     midiPosMinAttachment = std::make_unique<SliderAttachment>(audioProcessor.apvts, "midiPosMin", midiPosMinSlider);
     addAndMakeVisible(midiPosMinLabel); midiPosMinLabel.setText("Min Pos", juce::dontSendNotification);
@@ -253,7 +249,6 @@ GrainfreezeAudioProcessorEditor::GrainfreezeAudioProcessorEditor(GrainfreezeAudi
     addAndMakeVisible(midiPosMaxSlider); midiPosMaxSlider.setSliderStyle(juce::Slider::LinearHorizontal); midiPosMaxSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 20);
     midiPosMaxAttachment = std::make_unique<SliderAttachment>(audioProcessor.apvts, "midiPosMax", midiPosMaxSlider);
     addAndMakeVisible(midiPosMaxLabel); midiPosMaxLabel.setText("Max Pos", juce::dontSendNotification);
-
     startTimerHz(30);
 }
 
@@ -298,15 +293,12 @@ void GrainfreezeAudioProcessorEditor::timerCallback()
     waveformDisplay.repaint();
     const auto& m = audioProcessor.getSpectrumMagnitudes();
     if (!m.empty()) spectrumVisualizer.updateSpectrum(m, audioProcessor.getCurrentFftSize(), audioProcessor.getCurrentSampleRate());
-    
     bool isF = audioProcessor.freezeModeParam->get();
     freezeButton.setToggleState(isF, juce::dontSendNotification);
     freezeButton.setColour(juce::TextButton::buttonColourId, isF ? juce::Colours::orange : juce::Colours::grey);
-    
     bool isM = audioProcessor.midiModeParam->get();
     midiModeButton.setToggleState(isM, juce::dontSendNotification);
     midiModeButton.setColour(juce::TextButton::buttonColourId, isM ? juce::Colours::cyan : juce::Colours::grey);
-    
     if (audioProcessor.isAudioLoaded()) {
         juce::String s = "Loaded: " + audioProcessor.getLoadedFileName() + " | ";
         if (isM) s += "MIDI POLY"; else if (isF) s += "FREEZE"; else if (audioProcessor.isPlaying()) s += "PLAYING"; else s += "STOPPED";
