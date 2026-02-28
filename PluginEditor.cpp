@@ -48,19 +48,16 @@ void WaveformDisplay::paint(juce::Graphics& g)
     }
     g.strokePath(waveformPath, juce::PathStrokeType(1.0f));
 
-    // --- Loop Markers (Only in normal playback) ---
+    // --- Loop Markers ---
     if (showLoopMarkers)
     {
         float loopStartX = processor.loopStartParam->get() * static_cast<float>(width);
         float loopEndX = processor.loopEndParam->get() * static_cast<float>(width);
-        
         g.setColour(juce::Colours::darkgrey.withAlpha(0.2f));
         g.fillRect(loopStartX, 0.0f, loopEndX - loopStartX, static_cast<float>(height));
-
         g.setColour(juce::Colours::orange.withAlpha(0.7f));
         g.drawLine(loopStartX, 0.0f, loopStartX, static_cast<float>(height), 1.5f);
         g.drawLine(loopEndX, 0.0f, loopEndX, static_cast<float>(height), 1.5f);
-        
         juce::Path startTri, endTri;
         startTri.addTriangle(loopStartX - 6.0f, 0.0f, loopStartX + 6.0f, 0.0f, loopStartX, 12.0f);
         endTri.addTriangle(loopEndX - 6.0f, 0.0f, loopEndX + 6.0f, 0.0f, loopEndX, 12.0f);
@@ -82,12 +79,15 @@ void WaveformDisplay::paint(juce::Graphics& g)
         g.drawText("MIDI START (Note 0)", static_cast<int>(startX + 2), height - 15, 120, 12, juce::Justification::left);
         g.drawText("MIDI END (Note 127)", static_cast<int>(endX - 122), height - 15, 120, 12, juce::Justification::right);
 
+        float minP = processor.midiStartPosParam->get();
+        float maxP = processor.midiEndPosParam->get();
+
         for (int note = 0; note < 128; ++note)
         {
             float vel = processor.midiNoteStates[note].load();
             if (vel > 0.0f)
             {
-                float pos = juce::jmap(static_cast<float>(note), 0.0f, 127.0f, processor.midiStartPosParam->get(), processor.midiEndPosParam->get());
+                float pos = juce::jmap(static_cast<float>(note), 0.0f, 127.0f, minP, maxP);
                 float noteX = pos * static_cast<float>(width);
                 g.setColour(juce::Colours::magenta.withAlpha(0.6f * vel + 0.2f));
                 g.drawVerticalLine(static_cast<int>(noteX), 0.0f, static_cast<float>(height));

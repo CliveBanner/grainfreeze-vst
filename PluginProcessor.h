@@ -3,7 +3,6 @@
 #include <JuceHeader.h>
 #include <vector>
 #include <complex>
-#include <map>
 
 //==============================================================================
 class GrainfreezeAudioProcessor;
@@ -37,35 +36,33 @@ public:
     float currentVelocity = 0.0f;
     juce::SmoothedValue<double> smoothedFreezePosition;
     
-    // Micro-movement state per voice
     float freezeMicroMovement = 0.0f;
     int freezeMicroCounter = 0;
 
-    void updateFftResources(int newSize);
+    // Pre-allocates all buffers to MAX size to avoid audio-thread allocations
+    void allocateMaxBuffers(int maxSize);
 
 private:
     GrainfreezeAudioProcessor& processor;
     void performPhaseVocoder();
 
-    // Per-voice DSP state
+    // Per-voice DSP state - fixed size (Max FFT Size)
     std::vector<float> previousPhase;
     std::vector<float> synthesisPhase;
     std::vector<float> outputAccum;
     int outputWritePos = 0;
     int grainCounter = 0;
 
-    // Per-voice scratch buffers (Thread-safe)
+    // Per-voice scratch buffers - fixed size (Max FFT Size)
     std::vector<float> analysisFrame;
     std::vector<float> fftBuffer;
     std::vector<float> magnitudeBuffer;
     std::vector<float> phaseAdvanceBuffer;
     
-    // Per-voice envelope to prevent clicks
     juce::LinearSmoothedValue<float> envelope;
     bool isStopping = false;
 
     juce::Random random;
-    int currentVoiceFftSize = 0;
 };
 
 //==============================================================================
@@ -141,14 +138,13 @@ public:
     const std::vector<float>& getWindow() const { return window; }
     std::vector<float>& getSpectrumMagnitudesRef() { return spectrumMagnitudes; }
 
-    // Professional Synth management
     juce::Synthesiser synth;
     GrainfreezeVoice* getManualVoice();
     std::atomic<float> midiNoteStates[128];
 
-    // Shared FFT object cache (Thread-safe read access)
-    juce::dsp::FFT* getAnalysisFft(int size);
-    juce::dsp::FFT* getSynthesisFft(int size);
+    // Safe FFT access
+    juce::dsp::FFT* getAnalysisFft() { return currentAnalysisFft; }
+    juce::dsp::FFT* getSynthesisFft() { return currentSynthesisFft; }
 
 private:
     juce::AudioBuffer<float> loadedAudio;
@@ -177,9 +173,12 @@ private:
     std::vector<float> spectrumMagnitudes;
     std::vector<float> window;
 
-    // FFT Object Cache
-    std::map<int, std::unique_ptr<juce::dsp::FFT>> analysisFftCache;
-    std::map<int, std::unique_ptr<juce::dsp::FFT>> synthesisFftCache;
+    // Fixed array of FFT objects for all 8 sizes
+    static const int numFftSizes = 8;
+    std::unique_ptr<juce::dsp::FFT> analysisFftObjects[numFftSizes];
+    std::unique_ptr<juce::dsp::FFT> synthesisFftObjects[numFftSizes];
+    juce::dsp::FFT* currentAnalysisFft = nullptr;
+    juce::dsp::FFT* currentSynthesisFft = nullptr;
 
     void createWindow();
     void createHannWindow();
